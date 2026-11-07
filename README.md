@@ -1,0 +1,148 @@
+# CIQ Developer Terminal
+
+### Created by Stefano Roman Gunness
+
+**Your code. Your context. Your choice of AI.**
+
+An independently designed, CollectivIQ-first desktop developer workspace with
+a left sidebar, project conversations, editable project memory, MCP controls,
+and a model catalog that comes from your API key—not a hard-coded list.
+
+**Version 0.1.1 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
+· [Build and installation](#build) · [Original OpenCode source](https://github.com/anomalyco/opencode)
+
+![CIQ Developer Terminal workspace with left-side navigation and CollectivIQ branding](docs/images/workspace.png)
+
+## An original interface, with a credited open-source engine
+
+The CIQ application interface and workflow are created for **Stefano Roman
+Gunness**. The underlying coding engine is **[OpenCode 2.2.6](https://www.npmjs.com/package/@opencode/cli/v/2.2.6)**,
+used under its **MIT license**. This is not a claim that the OpenCode engine
+was originally written by Stefano, and it is not a full source fork or a
+feature-parity release.
+
+**Want to read or get a copy of OpenCode itself?**
+
+- [Read / download the original OpenCode repository](https://github.com/anomalyco/opencode)
+- [Read the official V2 documentation](https://opencode.ai/v2/docs/)
+- [Read its MIT license](assets/licenses/OpenCode-MIT.txt)
+- [How CIQ uses OpenCode and what this application adds](docs/OPENCODE.md)
+
+This is an independent project, not an official OpenCode or CollectivIQ distribution.
+
+## Downloads and platform status
+
+Use the [GitHub Releases page](https://github.com/stefanoromang/ciq-developer-terminal/releases).
+The macOS Apple Silicon preview is built and locally tested. Windows and
+Debian/Linux packaging configuration is included, but those artifacts should
+not be considered validated until their native builds and smoke tests pass.
+The macOS preview is **unsigned and not notarized**.
+
+## Features
+
+- One left sidebar for projects, conversations, models, MCPs and memory.
+- A preconfigured CollectivIQ gateway; one Developer/Gateway API key required.
+- Daily, weekly or manual model checks, without changing conversation models automatically.
+- Persistent local conversations and explicit, editable per-project notes.
+- Permission requests before agent tools execute.
+- User-level installation; no administrator installer elevation.
+
+## What you need
+
+- A **CollectivIQ Developer/Gateway API key**, entered in the app—not pasted into chat or a configuration file.
+- macOS, a desktop Debian/Linux environment, or Windows supported by Electron 45 and the bundled engine.
+- Local MCP commands may need separately installed runtimes. No npm, Python, Git or system-library installation happens silently.
+
+The endpoint is preconfigured as `https://api.prod.collectiviq.ai/v1`. The app validates the key with `GET /models`. **Standard platform keys are not model gateway keys.** Best of the Best is offered only if the catalog exposes it. No model IDs are invented or hard-coded.
+
+## Build
+
+Use Node 24 or newer, on the OS and architecture you are packaging:
+
+```sh
+npm ci
+npm run build
+npm test
+npm run test:desktop
+npm start
+```
+
+If your npm installation blocks dependency lifecycle scripts, review `node_modules/@opencode/cli/postinstall.mjs`, then run it explicitly. It selects and verifies the pinned native engine for the current OS/CPU:
+
+```sh
+node node_modules/@opencode/cli/postinstall.mjs
+```
+
+## User-only installation
+
+### macOS
+
+```sh
+npm run package:mac
+npm run install:user
+open "$HOME/Applications/CIQ Developer Terminal.app"
+```
+
+The installer creates `~/Applications/CIQ Developer Terminal.app`, never writes to system `/Applications`, and refuses to overwrite an existing app. For distribution, build the ZIP on macOS and have the developer sign and notarize it. **This local preview is unsigned/not notarized**; Gatekeeper can warn. Do not disable Gatekeeper or strip quarantine as an installation step.
+
+### Debian / Linux
+
+```sh
+npm run package:linux
+npm run install:user
+```
+
+Produces a portable tarball, with user installation under `~/.local/opt/ciq-developer-terminal`, a `~/.local/bin` launcher, and a user desktop entry. No `apt`, `.deb` installation, root or `sudo`. Electron still needs normal desktop system libraries and a working unprivileged Chromium sandbox. Restricted systems without those prerequisites may need IT support; **CIQ does not fall back to `--no-sandbox`**.
+
+For a downloaded Linux tarball, extract it to a new directory and run `./ciq-developer-terminal` there; no installation is required. User desktop-entry installation is optional.
+
+### Windows
+
+```powershell
+npm run package:win
+```
+
+Run the generated NSIS setup as a normal user, choosing a folder inside your profile, or use the portable executable. `perMachine:false` and `allowElevation:false` prohibit installer elevation. Unsigned builds can trigger SmartScreen. Windows packaging must be validated on Windows; a macOS build does not establish Windows support.
+
+The workflow in `.github/workflows/build.yml` builds native artifacts on separate OS runners. A configured workflow is not evidence that every target has passed validation; check the Actions results and release notes.
+
+## Workflow
+
+1. On first launch, choose **Developer / Gateway API key**, paste your key, and connect.
+2. Optionally enable tools for models whose catalog omits capability metadata, **only if your gateway supports OpenAI tool calls**. Unknown models otherwise start chat-only; declared chat-only models never get tools forced on.
+3. Choose a discovered model, then open a project folder. Each project has its own conversation list and editable notes.
+4. Add MCP servers in **MCP connections**. New servers stay disconnected until explicitly connected. Local commands execute as your user; review them before connecting. Remote servers can use OAuth when advertised. API-key-header MCP connections are not implemented in this preview.
+5. Choose daily, weekly or manual model refresh. Checks happen while CIQ is open and catch up after relaunch. The previous successful inventory survives failures. Existing conversation selections never change automatically.
+
+### Memory and privacy
+
+- Conversation history persists in the isolated local OpenCode database. The visible timeline loads the latest 80 messages and can page earlier messages; this is separate from model context compaction.
+- Project memory is **explicit user-edited notes**, not an unbounded or hidden automatic memory system. Notes can be disabled per project. Enabled notes are included in that project's new model prompts.
+- Saved gateway keys are encrypted through Electron `safeStorage`. macOS uses Keychain-backed protection; Windows uses DPAPI; Linux requires a secure available backend. `basic_text` is rejected. Session-only mode keeps the key in memory and requires reconnection after quitting.
+- This preview has no telemetry or cloud history sync. Prompt content, project context required by tools, and enabled notes are sent to the selected gateway model; connected remote MCP servers receive their tool inputs.
+- Filesystem, shell and MCP tool requests require explicit permission in the interface. A subprocess still runs with the current user's OS permissions: this is **not an OS filesystem sandbox**. The renderer is sandboxed.
+- The command panel executes commands you explicitly submit. It is a non-interactive shell output panel, not a PTY terminal emulator.
+- The private engine uses its own config/data/cache/state paths and a loopback API password. The existing OpenCode installation and global config are not changed. Project-local `AGENTS.md`, skills and `opencode.json(c)` are still discovered by the engine; open only projects you trust.
+
+## Current limitations
+
+- Not full OpenCode parity: no diff/revert viewer, PTY emulator, file attachment UI, provider OAuth/account manager, automatic project-memory extraction, app updater, or team sync.
+- Only CollectivIQ Gateway is supported in the first-run UI. Extra provider keys are deliberately not required or requested. Gateway access is the model source.
+- No latency, RAM, or package-size improvement over OpenCode has been established. Electron and the native engine are substantial dependencies. The frontend itself is bundled locally without remote scripts or analytics.
+- Live gateway generation needs a valid user key. Fixtures and local engine tests do not establish live provider compatibility, pricing, account entitlement, or consensus availability.
+- Release signing/notarization and Windows/Linux runtime validation are separate release tasks.
+
+Brand assets and colors are sourced from CollectivIQ's official site. See `THIRD-PARTY-NOTICES.md` and `docs/IMPLEMENTATION-PLAN.md` for provenance and architecture.
+
+## Authorship and licenses
+
+**CIQ Developer Terminal — created by Stefano Roman Gunness.**
+
+The original application code is published for inspection with rights reserved,
+as stated in [LICENSE](LICENSE). This is a source-visible project, not a blanket
+open-source license for the original CIQ application. Third-party components
+retain their own licenses; notably, **OpenCode remains MIT-licensed**. No
+ownership of OpenCode or CollectivIQ trademarks is claimed.
+
+See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md),
+[SECURITY.md](SECURITY.md), and [the validation report](docs/VALIDATION.md).

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+test-results/
+.DS_Store
+*.log
+docs/opencode-rea-evidence.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+gateway-key.bin
+workspace.json
+engine/

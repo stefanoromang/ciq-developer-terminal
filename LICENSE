@@ -1,0 +1,18 @@
+CIQ Developer Terminal — original application code and interface
+
+Copyright (c) 2026 Stefano Roman Gunness. All rights reserved.
+
+This repository is published for source inspection and reference. Publication
+does not grant a general license to copy, modify, redistribute, sublicense or
+commercialize the original CIQ Developer Terminal application code or design.
+Contact the copyright holder for additional permissions.
+
+This notice applies only to the original application material in this
+repository. It does not replace or restrict licenses for third-party software,
+fonts or assets. In particular, the OpenCode engine remains under its own MIT
+license, independently of this application. See THIRD-PARTY-NOTICES.md and
+assets/licenses/ for upstream notices and source links.
+
+CollectivIQ and OpenCode names, logos and trademarks remain the property of
+their respective owners. This is an independent project by Stefano Roman
+Gunness, not a claim of official endorsement by either project or company.

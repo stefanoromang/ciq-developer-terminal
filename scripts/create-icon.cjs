@@ -1,0 +1,13 @@
+const { app, BrowserWindow } = require('electron')
+const fs = require('node:fs/promises')
+const path = require('node:path')
+app.whenReady().then(async () => {
+  const svg = await fs.readFile(path.join(__dirname, '..', 'public', 'brand', 'ciq-mark.svg'))
+  const window = new BrowserWindow({ show: false, width: 1024, height: 1024, useContentSize: true, webPreferences: { sandbox: true, nodeIntegration: false } })
+  await window.loadURL(`data:text/html,${encodeURIComponent(`<html><body style="margin:0;width:1024px;height:1024px;background:#0f121b;display:grid;place-items:center"><img style="width:760px;height:760px" src="data:image/svg+xml;base64,${svg.toString('base64')}"></body></html>`)}`)
+  await window.webContents.executeJavaScript('Promise.all([...document.images].map(i=>i.decode()))')
+  const image = await window.webContents.capturePage({ x: 0, y: 0, width: 1024, height: 1024 })
+  await fs.writeFile(path.join(__dirname, '..', 'assets', 'icon.png'), image.resize({ width: 1024, height: 1024 }).toPNG())
+  console.log('App icon rendered from the official, unmodified CollectivIQ SVG mark.')
+  app.quit()
+}).catch(error => { console.error(error); app.exit(1) })

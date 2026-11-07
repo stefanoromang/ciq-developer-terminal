@@ -1,0 +1,21 @@
+const { app } = require('electron')
+const path = require('node:path')
+const fs = require('node:fs/promises')
+const os = require('node:os')
+const assert = require('node:assert/strict')
+app.whenReady().then(async () => {
+  const resources = process.env.CIQ_PACKAGE_RESOURCES || path.join(__dirname, '..', 'release', 'mac-arm64', 'CIQ Developer Terminal.app', 'Contents', 'Resources')
+  const archive = path.join(resources, 'app.asar')
+  const { Store } = require(path.join(archive, 'electron', 'core.cjs'))
+  const { Engine } = require(path.join(archive, 'electron', 'engine.cjs'))
+  const root = await fs.mkdtemp(path.join(process.env.TMPDIR || os.tmpdir(), 'ciq-package-verify-'))
+  const store = await new Store(root, { isEncryptionAvailable: () => false }).load()
+  const engine = new Engine(store)
+  try {
+    assert.ok(engine.binary().startsWith(`${resources}/app.asar.unpacked/`))
+    const info = await engine.request('GET', '/api/info')
+    assert.equal(info.version, '2.2.6')
+    console.log('Packaged engine verified:', info.version, engine.binary())
+  } finally { await engine.stop() }
+  app.quit()
+}).catch(error => { console.error(error); app.exit(1) })

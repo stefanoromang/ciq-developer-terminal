@@ -1,0 +1,45 @@
+const { app, BrowserWindow } = require('electron')
+const fs = require('node:fs')
+const path = require('node:path')
+const os = require('node:os')
+const assert = require('node:assert/strict')
+const root = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'ciq-main-smoke-'))
+process.env.CIQ_TEST_USER_DATA = path.join(root, 'user')
+const project = path.join(root, 'fixture-project')
+fs.mkdirSync(project)
+require('../electron/main.cjs')
+const until = async condition => {
+  for (let n = 0; n < 150; n++) {
+    const value = await condition()
+    if (value) return value
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+  throw new Error('Timed out waiting for desktop app readiness')
+}
+app.whenReady().then(async () => {
+  const window = await until(() => BrowserWindow.getAllWindows()[0])
+  await until(() => !window.webContents.isLoading() && window.webContents.getURL().endsWith('index.html'))
+  await until(() => window.webContents.executeJavaScript('Boolean(window.ciq && document.querySelector("h1"))'))
+  const state = await window.webContents.executeJavaScript('window.ciq.invoke("state")')
+  assert.equal(state.connected, false)
+  assert.equal(state.projects.length, 0)
+  assert.ok(!('key' in state))
+  const info = await window.webContents.executeJavaScript('window.ciq.invoke("engine.info")')
+  assert.equal(info.version, '2.2.6')
+  await assert.rejects(window.webContents.executeJavaScript('window.ciq.invoke("unsupported")'), /Unsupported action/)
+  const security = await window.webContents.executeJavaScript('({ require:typeof require, process:typeof process, preview:document.querySelector(".preview-label")?.textContent, modal:document.querySelector("dialog[open] h2")?.textContent })')
+  assert.equal(security.require, 'undefined')
+  assert.equal(security.process, 'undefined')
+  assert.equal(security.preview, undefined)
+  assert.match(security.modal, /one key/)
+  fs.mkdirSync(path.join(__dirname, '..', 'test-results'), { recursive: true })
+  await window.webContents.executeJavaScript('document.fonts.ready')
+  fs.writeFileSync(path.join(__dirname, '..', 'test-results', 'native-onboarding.png'), (await window.webContents.capturePage()).toPNG())
+  const enginePid = info.pid
+  console.log(JSON.stringify({ success: true, nativeBridge: true, version: info.version, secureStorage: state.secureStorage, enginePid, security }, null, 2))
+  app.once('will-quit', () => {
+    assert.throws(() => process.kill(enginePid, 0), 'Owned engine must stop when the app quits')
+    console.log('Owned coding engine cleanup verified.')
+  })
+  app.quit()
+}).catch(error => { console.error(error); app.exit(1) })
