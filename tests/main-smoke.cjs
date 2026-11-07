@@ -7,7 +7,7 @@ const root = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'ciq-ma
 process.env.CIQ_TEST_USER_DATA = path.join(root, 'user')
 const project = path.join(root, 'fixture-project')
 fs.mkdirSync(project)
-require('../electron/main.cjs')
+require(process.env.CIQ_PACKAGE_APP_ROOT ? path.join(process.env.CIQ_PACKAGE_APP_ROOT, 'electron', 'main.cjs') : '../electron/main.cjs')
 const until = async condition => {
   for (let n = 0; n < 150; n++) {
     const value = await condition()

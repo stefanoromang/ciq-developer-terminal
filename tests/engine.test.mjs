@@ -22,7 +22,8 @@ test('real pinned engine starts privately, persists sessions, guards API, and ru
     assert.equal(info.version, '2.2.6')
     assert.equal((await fetch(`${engine.url}/api/info`)).status, 401)
     const config = await engine.request('GET', '/api/config')
-    assert.ok(config.every(c => c.path.startsWith(root)))
+    const normalized = value => path.resolve(value).replaceAll('\\', '/').toLowerCase()
+    assert.ok(config.every(c => normalized(c.path).startsWith(normalized(root))))
     const created = await engine.request('POST', '/api/session', { title: 'CIQ integration fixture', location: { directory }, model: { providerID: 'collectiviq', id: 'fixture-model' }, permissions: [{ action: '*', resource: '*', effect: 'ask' }] })
     assert.ok(created.data.id.startsWith('ses'))
     const id = created.data.id

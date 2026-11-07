@@ -12,7 +12,7 @@ app.whenReady().then(async () => {
   const store = await new Store(root, { isEncryptionAvailable: () => false }).load()
   const engine = new Engine(store)
   try {
-    assert.ok(engine.binary().startsWith(`${resources}/app.asar.unpacked/`))
+    assert.ok(engine.binary().startsWith(path.join(resources, 'app.asar.unpacked') + path.sep))
     const info = await engine.request('GET', '/api/info')
     assert.equal(info.version, '2.2.6')
     console.log('Packaged engine verified:', info.version, engine.binary())

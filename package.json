@@ -1,7 +1,7 @@
 {
   "name": "ciq-developer-terminal",
   "productName": "CIQ Developer Terminal",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "An independent AI developer terminal created by Stefano Roman Gunness, designed for CollectivIQ and powered by OpenCode.",
   "author": "Stefano Roman Gunness",
@@ -58,12 +58,15 @@
     "linux": {
       "target": ["tar.gz"],
       "category": "Development",
+      "artifactName": "CIQ-Developer-Terminal-${version}-linux-${arch}.${ext}",
       "icon": "assets/icon.png",
       "executableName": "ciq-developer-terminal"
     },
-    "win": { "target": ["nsis", "portable"], "icon": "assets/icon.png" },
+    "win": { "target": ["nsis", "portable"], "icon": "assets/icon.png", "requestedExecutionLevel": "asInvoker" },
+    "portable": { "artifactName": "CIQ-Developer-Terminal-${version}-windows-${arch}-portable.exe", "requestExecutionLevel": "user" },
     "nsis": {
       "oneClick": false,
+      "artifactName": "CIQ-Developer-Terminal-${version}-windows-${arch}-setup.exe",
       "perMachine": false,
       "allowElevation": false,
       "allowToChangeInstallationDirectory": true,

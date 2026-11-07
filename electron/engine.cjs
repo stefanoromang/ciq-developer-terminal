@@ -23,7 +23,7 @@ class Engine {
     for (const name of candidates) {
       try {
         const manifest = require.resolve(`${name}/package.json`)
-        return path.join(path.dirname(manifest), 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode').replace('app.asar/', 'app.asar.unpacked/')
+        return path.join(path.dirname(manifest), 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
       } catch { /* try the installed alternative */ }
     }
     throw new Error(`The bundled coding engine is missing for ${process.platform}/${process.arch}. Rebuild on the target platform.`)

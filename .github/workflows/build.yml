@@ -7,16 +7,20 @@ permissions:
   contents: read
 jobs:
   package:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-14
             package: mac
-          - os: ubuntu-24.04
+            resources: release/mac-arm64/CIQ Developer Terminal.app/Contents/Resources
+          - os: ubuntu-22.04
             package: linux
+            resources: release/linux-unpacked/resources
           - os: windows-2022
             package: win
+            resources: release/win-unpacked/resources
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,10 +31,52 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Desktop and native IPC smoke tests
+        if: runner.os != 'Linux'
+        run: |
+          npx electron tests/desktop-smoke.cjs
+          npx electron tests/main-smoke.cjs
+      - name: Sandboxed Linux desktop smoke tests
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a npx electron tests/desktop-smoke.cjs
+          xvfb-run -a npx electron tests/main-smoke.cjs
       - run: npx electron-builder --${{ matrix.package }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify packaged engine and native app
+        if: runner.os != 'Linux'
+        run: |
+          npx electron scripts/verify-package.cjs
+          npx electron tests/main-smoke.cjs
+        env:
+          CIQ_PACKAGE_RESOURCES: ${{ github.workspace }}/${{ matrix.resources }}
+          CIQ_PACKAGE_APP_ROOT: ${{ github.workspace }}/${{ matrix.resources }}/app.asar
+      - name: Verify sandboxed Linux package
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a npx electron scripts/verify-package.cjs
+          xvfb-run -a npx electron tests/main-smoke.cjs
+        env:
+          CIQ_PACKAGE_RESOURCES: ${{ github.workspace }}/${{ matrix.resources }}
+          CIQ_PACKAGE_APP_ROOT: ${{ github.workspace }}/${{ matrix.resources }}/app.asar
+      - name: Verify Windows per-user installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release/*-setup.exe | Select-Object -First 1
+          $destination = Join-Path $env:LOCALAPPDATA 'CIQ-Installer-Smoke'
+          $process = Start-Process $setup.FullName -ArgumentList '/S', '/currentuser', "/D=$destination" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
+          if (!(Test-Path "$destination/CIQ Developer Terminal.exe")) { throw 'Per-user executable not installed' }
+          $env:CIQ_PACKAGE_RESOURCES = "$destination/resources"
+          $env:CIQ_PACKAGE_APP_ROOT = "$destination/resources/app.asar"
+          npx electron scripts/verify-package.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Installed engine failed' }
+          npx electron tests/main-smoke.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Installed native app failed' }
+      - name: Create checksums
+        run: node scripts/checksums.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: ciq-developer-terminal-${{ runner.os }}-${{ runner.arch }}
@@ -39,4 +85,11 @@ jobs:
             release/*.tar.gz
             release/*.exe
             release/*.blockmap
+            release/SHA256SUMS-*.txt
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-screenshots-${{ runner.os }}-${{ runner.arch }}
+          path: test-results/*.png
+          if-no-files-found: ignore
