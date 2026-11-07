@@ -98,6 +98,7 @@ test('update downloads require a checksum file', async () => {
 
 test('macOS bundle path is derived from the executable inside the bundle', () => {
   assert.equal(macBundlePath('/Applications/CIQ Developer Terminal.app/Contents/MacOS/CIQ Developer Terminal'), '/Applications/CIQ Developer Terminal.app')
+  assert.equal(macBundlePath('C:\\Apps\\CIQ Developer Terminal.app\\Contents\\MacOS\\CIQ Developer Terminal.exe'), 'C:\\Apps\\CIQ Developer Terminal.app')
   assert.throws(() => macBundlePath('/usr/local/bin/ciq'), /not inside a macOS application bundle/)
 })
 

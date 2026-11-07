@@ -14,7 +14,7 @@ if (process.platform === 'darwin') {
   if (!await exists(source)) throw new Error('Build the macOS app first with npm run package:mac on a Mac with the same architecture.')
   await ensureNew(destination)
   await fs.mkdir(path.dirname(destination), { recursive: true })
-  await fs.cp(source, destination, { recursive: true, errorOnExist: true, force: false })
+  await fs.cp(source, destination, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true })
   console.log(`Installed for your user only:\n${destination}\nOpen it from Finder. No admin privileges were requested.`)
 } else if (process.platform === 'linux') {
   const source = process.env.CIQ_PORTABLE_SOURCE || path.join(root, 'release', process.arch === 'arm64' ? 'linux-arm64-unpacked' : 'linux-unpacked')
@@ -24,7 +24,7 @@ if (process.platform === 'darwin') {
   if (!await exists(path.join(source, 'ciq-developer-terminal'))) throw new Error('Build with npm run package:linux or set CIQ_PORTABLE_SOURCE to an extracted Linux release.')
   await Promise.all([ensureNew(destination), ensureNew(bin), ensureNew(desktop)])
   await fs.mkdir(path.dirname(destination), { recursive: true })
-  await fs.cp(source, destination, { recursive: true, errorOnExist: true, force: false })
+  await fs.cp(source, destination, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true })
   await fs.mkdir(path.dirname(bin), { recursive: true })
   await fs.symlink(path.join(destination, 'ciq-developer-terminal'), bin)
   await fs.mkdir(path.dirname(desktop), { recursive: true })

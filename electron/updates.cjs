@@ -171,10 +171,9 @@ async function downloadUpdate(update, destination, { fetchImpl = fetch, onProgre
 }
 
 function macBundlePath(execPath = process.execPath) {
-  const marker = `${path.sep}Contents${path.sep}MacOS${path.sep}`
-  const index = execPath.indexOf(marker)
-  if (index < 0) throw new Error('This copy of CIQ is not inside a macOS application bundle.')
-  return execPath.slice(0, index)
+  const match = /[\\/]Contents[\\/]MacOS[\\/]/.exec(execPath)
+  if (!match) throw new Error('This copy of CIQ is not inside a macOS application bundle.')
+  return execPath.slice(0, match.index)
 }
 
 async function installUpdate({
