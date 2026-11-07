@@ -1,5 +1,16 @@
 # Validation — November 7, 2026
 
+## 0.1.1 creator-branded update
+
+- Creator metadata, sidebar credit and Settings attribution identify **Stefano Roman Gunness** as creator of the independent CIQ interface.
+- README, Settings and `docs/OPENCODE.md` link to the original OpenCode source and official documentation. OpenCode engine authorship is not attributed to Stefano.
+- All 13 tests, desktop renderer checks, native IPC checks and packaged-engine checks were rerun successfully for 0.1.1.
+- The updated macOS arm64 app was installed at `~/Applications/CIQ Developer Terminal.app` and confirmed running. Existing app data was left untouched; the previous preview was preserved as a sibling backup.
+- `CIQ-Developer-Terminal-0.1.1-mac-arm64.zip`: approximately 220 MiB.
+- SHA-256: `9f112cc4a6937cbbbd486b5beca8940be7f637abb171fd10c3930876a5835f34`.
+- Public repository: https://github.com/stefanoromang/ciq-developer-terminal
+- The following original delivery record concerns 0.1.0; signing and platform limitations still apply.
+
 ## Delivered locally
 
 - Source project: `ciq-developer-terminal/`.
