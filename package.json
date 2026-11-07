@@ -1,7 +1,7 @@
 {
   "name": "ciq-developer-terminal",
   "productName": "CIQ Developer Terminal",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "An independent AI developer terminal created by Stefano Roman Gunness, designed for CollectivIQ and powered by OpenCode.",
   "author": "Stefano Roman Gunness",
@@ -10,7 +10,9 @@
     "type": "git",
     "url": "https://github.com/stefanoromang/ciq-developer-terminal.git"
   },
-  "bugs": { "url": "https://github.com/stefanoromang/ciq-developer-terminal/issues" },
+  "bugs": {
+    "url": "https://github.com/stefanoromang/ciq-developer-terminal/issues"
+  },
   "license": "UNLICENSED",
   "type": "module",
   "main": "electron/main.cjs",
@@ -47,23 +49,50 @@
     "appId": "ai.collectiviq.developer-terminal",
     "productName": "CIQ Developer Terminal",
     "asar": true,
-    "asarUnpack": ["node_modules/@opencode/cli*/**"],
-    "directories": { "output": "release" },
-    "files": ["dist/**", "electron/**", "package.json", "LICENSE", "THIRD-PARTY-NOTICES.md", "assets/icon.png", "assets/licenses/**"],
+    "asarUnpack": [
+      "node_modules/@opencode/cli*/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json",
+      "LICENSE",
+      "THIRD-PARTY-NOTICES.md",
+      "assets/icon.png",
+      "assets/licenses/**"
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["zip"],
-      "icon": "assets/icon.png"
+      "target": [
+        "zip"
+      ],
+      "icon": "assets/icon.png",
+      "artifactName": "CIQ-Developer-Terminal-${version}-mac-${arch}.${ext}"
     },
     "linux": {
-      "target": ["tar.gz"],
+      "target": [
+        "tar.gz"
+      ],
       "category": "Development",
       "artifactName": "CIQ-Developer-Terminal-${version}-linux-${arch}.${ext}",
       "icon": "assets/icon.png",
       "executableName": "ciq-developer-terminal"
     },
-    "win": { "target": ["nsis", "portable"], "icon": "assets/icon.png", "requestedExecutionLevel": "asInvoker" },
-    "portable": { "artifactName": "CIQ-Developer-Terminal-${version}-windows-${arch}-portable.exe", "requestExecutionLevel": "user" },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "portable": {
+      "artifactName": "CIQ-Developer-Terminal-${version}-windows-${arch}-portable.exe",
+      "requestExecutionLevel": "user"
+    },
     "nsis": {
       "oneClick": false,
       "artifactName": "CIQ-Developer-Terminal-${version}-windows-${arch}-setup.exe",

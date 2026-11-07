@@ -2,7 +2,9 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 const commands = new Set([
   'state', 'project.open', 'project.select', 'project.close', 'memory.save',
-  'key.connect', 'key.disconnect', 'models.refresh', 'settings.save',
+  'free.enable', 'key.connect', 'key.disconnect', 'models.refresh', 'settings.save',
+  'provider.list', 'provider.connect', 'provider.disconnect',
+  'updates.check', 'updates.download', 'updates.install', 'updates.skip', 'updates.settings',
   'session.create', 'session.select', 'session.messages', 'session.prompt',
   'session.interrupt', 'session.model', 'session.rename', 'session.archive',
   'mcp.list', 'mcp.add', 'mcp.toggle', 'mcp.remove', 'mcp.auth', 'mcp.authStatus', 'mcp.authComplete',

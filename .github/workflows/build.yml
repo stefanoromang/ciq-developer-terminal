@@ -14,13 +14,10 @@ jobs:
         include:
           - os: macos-latest
             package: mac
-            resources: release/mac-arm64/CIQ Developer Terminal.app/Contents/Resources
           - os: ubuntu-22.04
             package: linux
-            resources: release/linux-unpacked/resources
           - os: windows-2022
             package: win
-            resources: release/win-unpacked/resources
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -44,22 +41,18 @@ jobs:
       - run: npx electron-builder --${{ matrix.package }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Resolve packaged resources
+        run: node scripts/find-resources.mjs
       - name: Verify packaged engine and native app
         if: runner.os != 'Linux'
         run: |
           npx electron scripts/verify-package.cjs
           npx electron tests/main-smoke.cjs
-        env:
-          CIQ_PACKAGE_RESOURCES: ${{ github.workspace }}/${{ matrix.resources }}
-          CIQ_PACKAGE_APP_ROOT: ${{ github.workspace }}/${{ matrix.resources }}/app.asar
       - name: Verify sandboxed Linux package
         if: runner.os == 'Linux'
         run: |
           xvfb-run -a npx electron scripts/verify-package.cjs
           xvfb-run -a npx electron tests/main-smoke.cjs
-        env:
-          CIQ_PACKAGE_RESOURCES: ${{ github.workspace }}/${{ matrix.resources }}
-          CIQ_PACKAGE_APP_ROOT: ${{ github.workspace }}/${{ matrix.resources }}/app.asar
       - name: Verify Windows per-user installer
         if: runner.os == 'Windows'
         shell: pwsh

@@ -27,7 +27,7 @@ Extract the downloaded archive into a directory you own:
 
 ```sh
 mkdir -p "$HOME/Applications/CIQ-Developer-Terminal"
-tar -xzf "$HOME/Downloads/CIQ-Developer-Terminal-0.1.2-linux-x64.tar.gz" \
+tar -xzf "$HOME/Downloads/CIQ-Developer-Terminal-0.2.0-linux-x64.tar.gz" \
   -C "$HOME/Applications/CIQ-Developer-Terminal"
 ```
 
@@ -60,27 +60,36 @@ Compare the SHA-256 hash with the checksum file attached to the same release:
 
 ```powershell
 # Windows PowerShell
-Get-FileHash .\CIQ-Developer-Terminal-0.1.2-windows-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\CIQ-Developer-Terminal-0.2.0-windows-x64-setup.exe -Algorithm SHA256
 ```
 
 ```sh
 # Linux
-sha256sum CIQ-Developer-Terminal-0.1.2-linux-x64.tar.gz
+sha256sum CIQ-Developer-Terminal-0.2.0-linux-x64.tar.gz
 
 # macOS
-shasum -a 256 'CIQ Developer Terminal-0.1.2-arm64-mac.zip'
+shasum -a 256 'CIQ-Developer-Terminal-0.2.0-mac-arm64.zip'
 ```
 
 Use the actual name of your download if it differs from these examples.
 
 ## First launch
 
-1. Select **Developer / Gateway API key** and paste your CollectivIQ key into
-   the app. Never put a key in a GitHub issue or send it in chat.
-2. Connect to discover your account's models.
-3. Choose a model and open a project folder.
+1. Choose **Use free models** to start immediately with OpenCode's free coding
+   models. No API key is required.
+2. Open a project folder and start a conversation.
+3. Optional: connect a CollectivIQ Developer/Gateway key, or add another
+   provider in **Model library → Connect another provider**. Never put a key in
+   a GitHub issue or send it in chat.
 4. Add only trusted MCP servers, and approve tool execution when appropriate.
 
-You do not need separate OpenAI/Anthropic keys for models available through the
-CollectivIQ gateway. Model access, costs and Best of the Best availability
-depend on the account and API catalog.
+Free model availability and rate limits are controlled by OpenCode. CollectivIQ
+model access, costs and Best of the Best availability depend on the account and
+API catalog.
+
+## Updates
+
+CIQ 0.2.0 and later check this repository's GitHub releases about twice a week,
+catch up on launch, and download newer versions automatically. Each download is
+SHA-256 verified before installation, and CIQ asks before restarting. The 0.1.2
+preview has no updater, so install 0.2.0 manually once.

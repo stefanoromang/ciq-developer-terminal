@@ -50,6 +50,9 @@ class Engine {
     }
     const key = await this.store.getKey()
     if (key) env.CIQ_GATEWAY_KEY = key
+    // Third-party provider keys stay in CIQ's encrypted vault and are handed to
+    // the isolated engine only for this process. The engine never persists them.
+    Object.assign(env, await this.store.providerEnv())
     // Local API credentials are random per app launch and never exposed to the renderer.
     this.password = randomBytes(32).toString('hex')
     env.OPENCODE_SERVER_PASSWORD = this.password
@@ -106,6 +109,9 @@ class Engine {
       let message = data.message || data.error?.message || `Engine request failed (HTTP ${response.status}).`
       const key = this.store.key
       if (key) message = String(message).replaceAll(key, '[redacted]')
+      if (/free usage limit|FreeUsageLimitError/i.test(String(message))) {
+        message = 'OpenCode’s free-model limit was reached. Wait a few minutes, choose another free model, or connect a CollectivIQ Developer key for reliable access.'
+      }
       throw new Error(String(message).slice(0, 700))
     }
     return data

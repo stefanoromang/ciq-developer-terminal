@@ -5,14 +5,14 @@ import path from 'node:path'
 import os from 'node:os'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-const { Store, normalizeModels, fetchModels, shouldRefresh, engineConfig, validateMcp, memoryPrompt } = require('../electron/core.cjs')
+const { Store, normalizeModels, normalizeEngineModels, mergeModels, modelKey, findModel, migrateState, fetchModels, shouldRefresh, engineConfig, validateMcp, memoryPrompt, FREE_PROVIDER } = require('../electron/core.cjs')
 const temporary = () => fs.mkdtemp(path.join(process.env.TMPDIR || os.tmpdir(), 'ciq-core-test-'))
 const encryption = { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(`encrypted:${value}`), decryptString: value => value.toString().slice(10) }
 
 test('catalog is dynamic, deduplicated and excludes non-chat models', () => {
   assert.deepEqual(normalizeModels({ data: [{ id: 'coder-a', supports_tools: true }, { id: 'coder-a' }, { id: 'embed-one', type: 'embedding' }, { id: 'tts-voice' }, { id: '' }, { id: 'coder-b', name: 'B', capabilities: { tools: false }, context_window: 200000 }] }), [
-    { id: 'coder-b', name: 'B', provider: 'CollectivIQ', tools: false, context: 200000 },
-    { id: 'coder-a', name: 'coder-a', provider: 'CollectivIQ', tools: true, context: null },
+    { id: 'coder-b', name: 'B', providerID: 'collectiviq', provider: 'CollectivIQ', tools: false, context: 200000, free: false },
+    { id: 'coder-a', name: 'coder-a', providerID: 'collectiviq', provider: 'CollectivIQ', tools: true, context: null, free: false },
   ])
   assert.throws(() => normalizeModels({ data: [] }), /no chat models/)
   assert.throws(() => normalizeModels({ models: [] }), /invalid model catalog/)
@@ -91,10 +91,83 @@ test('MCP setup validates transport, saves disabled, and does not shell-expand c
   assert.deepEqual(validateMcp({ name: 'docs', type: 'local', command: '["node","$HOME/server.js"]' }).config.command, ['node', '$HOME/server.js'])
 })
 test('engine config uses V2 shape, no literal secret, and explicit tools capability', () => {
-  const config = engineConfig({ models: [{ id: 'unknown', name: 'Unknown', tools: null }, { id: 'chat', name: 'Chat', tools: false }], mcps: [], toolsConfirmed: true, selectedModel: 'unknown' })
+  const config = engineConfig({ models: [{ id: 'unknown', name: 'Unknown', tools: null }, { id: 'chat', name: 'Chat', tools: false }], mcps: [], toolsConfirmed: true, selectedModel: 'collectiviq/unknown' })
   assert.equal(config.providers.collectiviq.settings.apiKey, '{env:CIQ_GATEWAY_KEY}')
   assert.equal(config.providers.collectiviq.models.unknown.capabilities.tools, true)
   assert.equal(config.providers.collectiviq.models.chat.capabilities.tools, false)
   assert.equal(config.permissions[0].effect, 'ask')
   assert.deepEqual(config.mcp, { servers: {} })
+  assert.equal(config.model, 'collectiviq/unknown')
+  const allowed = config.policies.filter(policy => policy.effect === 'allow').map(policy => policy.resource)
+  assert.deepEqual(allowed.sort(), ['collectiviq', 'opencode'])
+})
+test('engine model catalog filters to allowed providers and marks zero-cost models free', () => {
+  const payload = { data: [
+    { providerID: 'opencode', modelID: 'big-pickle', name: 'Big Pickle', type: 'chat', cost: [{ input: 0, output: 0 }], capabilities: { tools: true }, limit: { context: 200000 } },
+    { providerID: 'opencode', modelID: 'paid-model', name: 'Paid', type: 'chat', cost: [{ input: 1, output: 2 }] },
+    { providerID: 'openai', modelID: 'gpt-x', name: 'GPT X', type: 'chat', cost: [{ input: 0, output: 0 }] },
+    { providerID: 'opencode', modelID: 'image-one', name: 'Image', type: 'image' },
+  ] }
+  const models = normalizeEngineModels(payload, {}, ['opencode'])
+  assert.deepEqual(models.map(model => model.id), ['big-pickle', 'paid-model'])
+  assert.equal(models[0].free, true)
+  assert.equal(models[0].provider, 'OpenCode Zen')
+  assert.equal(models[0].tools, true)
+  assert.equal(models[0].context, 200000)
+  assert.equal(models[1].free, false)
+})
+test('model keys are provider-qualified and legacy bare ids still resolve', () => {
+  const models = [
+    { id: 'shared', providerID: 'opencode', name: 'Shared free' },
+    { id: 'shared', providerID: 'collectiviq', name: 'Shared gateway' },
+  ]
+  assert.equal(modelKey(models[1]), 'collectiviq/shared')
+  assert.equal(findModel(models, 'collectiviq/shared').name, 'Shared gateway')
+  assert.equal(findModel(models, 'shared').providerID, 'opencode')
+  assert.deepEqual(mergeModels([models[0]], [models[0], models[1]]).map(modelKey), ['opencode/shared', 'collectiviq/shared'])
+})
+test('migration upgrades legacy workspaces without resetting projects or selections', () => {
+  const state = {
+    projects: [{ id: 'p', name: 'P', directory: '/tmp/p', memory: 'keep me', sessions: [{ id: 's', title: 'S', model: 'legacy-model', created: 1 }] }],
+    models: [{ id: 'legacy-model', name: 'Legacy', tools: true, context: null }],
+    selectedModel: 'legacy-model', mcps: [], cadence: 'daily',
+  }
+  const migrated = migrateState(state)
+  assert.equal(migrated.projects[0].memory, 'keep me')
+  assert.equal(migrated.projects[0].sessions[0].model, 'collectiviq/legacy-model')
+  assert.equal(migrated.selectedModel, 'collectiviq/legacy-model')
+  assert.equal(migrated.models[0].providerID, 'collectiviq')
+  assert.equal(migrated.freeEnabled, true)
+  assert.deepEqual(migrated.providers, [])
+  assert.equal(migrated.updates.autoDownload, true)
+})
+test('provider keys are encrypted, isolated from public state, and scoped per provider', async () => {
+  const root = await temporary()
+  const store = await new Store(root, encryption).load()
+  await store.setProviderKey('groq', 'groq-fixture', true)
+  await store.setProviderKey('anthropic', 'anthropic-fixture', true)
+  store.state.providers = [
+    { id: 'groq', name: 'Groq', env: ['GROQ_API_KEY'] },
+    { id: 'anthropic', name: 'Anthropic', env: ['ANTHROPIC_API_KEY'] },
+  ]
+  assert.equal(await store.getProviderKey('groq'), 'groq-fixture')
+  assert.deepEqual(await store.providerEnv(), { GROQ_API_KEY: 'groq-fixture', ANTHROPIC_API_KEY: 'anthropic-fixture' })
+  assert.equal(JSON.stringify(await store.publicState()).includes('fixture'), false)
+  const raw = await fs.readFile(store.providerVault, 'utf8')
+  assert.equal(raw.startsWith('encrypted:'), true)
+  await store.clearProviderKey('groq')
+  assert.equal(await store.getProviderKey('groq'), null)
+  assert.deepEqual(await store.providerEnv(), { ANTHROPIC_API_KEY: 'anthropic-fixture' })
+  const reloaded = await new Store(root, encryption).load()
+  assert.equal(await reloaded.getProviderKey('anthropic'), 'anthropic-fixture')
+})
+test('public state exposes free mode and update defaults without secrets', async () => {
+  const store = await new Store(await temporary(), encryption).load()
+  const state = await store.publicState()
+  assert.equal(state.freeProvider, FREE_PROVIDER)
+  assert.equal(state.freeEnabled, true)
+  assert.equal(state.connected, false)
+  assert.equal(state.gateway, 'https://api.prod.collectiviq.ai/v1')
+  assert.equal(state.updates.autoDownload, true)
+  assert.equal(state.updates.intervalDays, undefined)
 })

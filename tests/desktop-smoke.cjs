@@ -42,6 +42,8 @@ app.whenReady().then(async () => {
   }
   await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Connect key').click()`)
   await waitFor('Boolean(document.querySelector("dialog[open]"))')
+  await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('dialog button')).find(b => b.textContent.includes('CollectivIQ Developer key'))?.click()`)
+  await waitFor('Boolean(document.querySelector("dialog input[type=\\"password\\"]"))')
   const modal = await window.webContents.executeJavaScript(`({label: document.querySelector('dialog').getAttribute('aria-labelledby'), focusedInside: document.querySelector('dialog').contains(document.activeElement), title: document.querySelector('dialog h2').textContent, password: Boolean(document.querySelector('dialog input[type="password"]'))})`)
   assert.equal(modal.focusedInside, true)
   assert.equal(modal.password, true)

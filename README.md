@@ -6,9 +6,9 @@
 
 An independently designed, CollectivIQ-first desktop developer workspace with
 a left sidebar, project conversations, editable project memory, MCP controls,
-and a model catalog that comes from your API key—not a hard-coded list.
+OpenCode's free coding models out of the box, and optional provider keys.
 
-**Version 0.1.2 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
+**Version 0.2.0 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
 · [Build and installation](#build) · [Original OpenCode source](https://github.com/anomalyco/opencode)
 
 ![CIQ Developer Terminal workspace with left-side navigation and CollectivIQ branding](docs/images/workspace.png)
@@ -33,38 +33,53 @@ This is an independent project, not an official OpenCode or CollectivIQ distribu
 ## Downloads and platform status
 
 Use the [GitHub Releases page](https://github.com/stefanoromang/ciq-developer-terminal/releases).
-Windows x64 setup/portable and Linux x64 portable packages have passed native
-CI build and smoke tests. Linux was tested on Ubuntu 22.04; Debian desktop
-use still depends on the required libraries and sandbox support. The macOS
-Apple Silicon 0.1.1 preview is built and locally tested. Downloads are
-**unsigned**, and the macOS preview is **not notarized**.
+Windows x64 setup/portable, Linux x64 portable and macOS Apple Silicon packages
+are built natively by the release workflow. Linux is tested on Ubuntu 22.04;
+Debian desktop use still depends on the required libraries and sandbox support.
+Downloads are **unsigned**, and the macOS preview is **not notarized**.
 
 | Download | Format |
 |---|---|
-| [Windows x64 installer](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.1.2/CIQ-Developer-Terminal-0.1.2-windows-x64-setup.exe) | Per-user setup, no installer elevation |
-| [Windows x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.1.2/CIQ-Developer-Terminal-0.1.2-windows-x64-portable.exe) | Run without installing |
-| [Linux x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.1.2/CIQ-Developer-Terminal-0.1.2-linux-x64.tar.gz) | Extract and run as your user |
-| [macOS Apple Silicon 0.1.1](https://github.com/stefanoromang/ciq-developer-terminal/releases/tag/v0.1.1) | Install in `~/Applications` |
+| [Windows x64 installer](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-windows-x64-setup.exe) | Per-user setup, no installer elevation |
+| [Windows x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-windows-x64-portable.exe) | Run without installing |
+| [Linux x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-linux-x64.tar.gz) | Extract and run as your user |
+| [macOS Apple Silicon](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-mac-arm64.zip) | Extract into `~/Applications` |
 
 See [download instructions](docs/DOWNLOADS.md) and
-[0.1.2 validation/release notes](docs/RELEASE-0.1.2.md).
+[0.2.0 validation/release notes](docs/RELEASE-0.2.0.md).
+
+> **Updating from 0.1.2:** 0.1.2 has no updater. Install 0.2.0 once manually.
+> From 0.2.0 onward, CIQ checks its GitHub releases about twice a week and can
+> download and install newer versions itself.
 
 ## Features
 
+- **Free models on first launch.** OpenCode's free coding models work without a
+  CollectivIQ key or any other provider key.
+- **Bring your own provider when you want one.** Add CollectivIQ or any provider
+  the bundled engine exposes by pasting a key; keys are kept in CIQ's encrypted
+  vault and injected only into the isolated engine.
 - One left sidebar for projects, conversations, models, MCPs and memory.
-- A preconfigured CollectivIQ gateway; one Developer/Gateway API key required.
 - Daily, weekly or manual model checks, without changing conversation models automatically.
 - Persistent local conversations and explicit, editable per-project notes.
 - Permission requests before agent tools execute.
+- **Automatic update checks** against this repository's releases, with
+  checksum verification and a user-triggered restart.
 - User-level installation; no administrator installer elevation.
 
 ## What you need
 
-- A **CollectivIQ Developer/Gateway API key**, entered in the app—not pasted into chat or a configuration file.
+- **Nothing, to start.** Free OpenCode models are enabled by default. They are
+  rate-limited by OpenCode and can change or be unavailable at times.
+- **Optional:** a CollectivIQ Developer/Gateway API key for reliable access to
+  your account's models, or an API key for another supported provider.
 - macOS, a desktop Debian/Linux environment, or Windows supported by Electron 45 and the bundled engine.
 - Local MCP commands may need separately installed runtimes. No npm, Python, Git or system-library installation happens silently.
 
-The endpoint is preconfigured as `https://api.prod.collectiviq.ai/v1`. The app validates the key with `GET /models`. **Standard platform keys are not model gateway keys.** Best of the Best is offered only if the catalog exposes it. No model IDs are invented or hard-coded.
+The CollectivIQ endpoint is preconfigured as `https://api.prod.collectiviq.ai/v1`.
+When a key is supplied, the app validates it with `GET /models`. **Standard
+platform keys are not model gateway keys.** Best of the Best is offered only if
+the catalog exposes it. No model IDs are invented or hard-coded.
 
 ## Build
 
@@ -119,11 +134,21 @@ The workflow in `.github/workflows/build.yml` builds native artifacts on separat
 
 ## Workflow
 
-1. On first launch, choose **Developer / Gateway API key**, paste your key, and connect.
-2. Optionally enable tools for models whose catalog omits capability metadata, **only if your gateway supports OpenAI tool calls**. Unknown models otherwise start chat-only; declared chat-only models never get tools forced on.
-3. Choose a discovered model, then open a project folder. Each project has its own conversation list and editable notes.
-4. Add MCP servers in **MCP connections**. New servers stay disconnected until explicitly connected. Local commands execute as your user; review them before connecting. Remote servers can use OAuth when advertised. API-key-header MCP connections are not implemented in this preview.
-5. Choose daily, weekly or manual model refresh. Checks happen while CIQ is open and catch up after relaunch. The previous successful inventory survives failures. Existing conversation selections never change automatically.
+1. On first launch, choose **Use free models** to start with OpenCode's free
+   models immediately. No key is required.
+2. Optional: connect a CollectivIQ Developer/Gateway key, or add another
+   provider in **Model library → Connect another provider**.
+3. Optionally enable tools for gateway models whose catalog omits capability
+   metadata, **only if your gateway supports OpenAI tool calls**. Unknown models
+   otherwise start chat-only; declared chat-only models never get tools forced on.
+4. Choose a model, then open a project folder. Each project has its own
+   conversation list and editable notes.
+5. Add MCP servers in **MCP connections**. New servers stay disconnected until explicitly connected. Local commands execute as your user; review them before connecting. Remote servers can use OAuth when advertised. API-key-header MCP connections are not implemented in this preview.
+6. Choose daily, weekly or manual model refresh. Checks happen while CIQ is open and catch up after relaunch. The previous successful inventory survives failures. Existing conversation selections never change automatically.
+7. CIQ checks this repository's GitHub releases about twice a week, catches up
+   on launch, and downloads a newer version when one exists. The download is
+   SHA-256 verified. CIQ asks before restarting to install; it does not silently
+   replace itself mid-session.
 
 ### Memory and privacy
 
@@ -137,10 +162,12 @@ The workflow in `.github/workflows/build.yml` builds native artifacts on separat
 
 ## Current limitations
 
-- Not full OpenCode parity: no diff/revert viewer, PTY emulator, file attachment UI, provider OAuth/account manager, automatic project-memory extraction, app updater, or team sync.
-- Only CollectivIQ Gateway is supported in the first-run UI. Extra provider keys are deliberately not required or requested. Gateway access is the model source.
+- Not full OpenCode parity: no diff/revert viewer, PTY emulator, file attachment UI, provider OAuth/account manager, automatic project-memory extraction, or team sync.
+- Free model availability, model names and rate limits are controlled by OpenCode and can change without notice. A `429` free-usage limit is reported as a rate limit, not as a broken key.
+- Third-party providers are connected by API key only in this preview. Providers that require browser OAuth or an external command are not offered in the provider dialog.
+- Automatic updates install only releases that contain a matching platform asset and a SHA-256 checksum file. 0.1.2 users must install 0.2.0 manually once.
 - No latency, RAM, or package-size improvement over OpenCode has been established. Electron and the native engine are substantial dependencies. The frontend itself is bundled locally without remote scripts or analytics.
-- Live gateway generation needs a valid user key. Fixtures and local engine tests do not establish live provider compatibility, pricing, account entitlement, or consensus availability.
+- Live gateway and live free-model generation depend on the provider. Fixtures and local engine tests do not establish live provider compatibility, pricing, account entitlement, or consensus availability.
 - Release signing/notarization, validation on a Debian host and broader end-user OS coverage remain release tasks. Windows and Ubuntu Linux native CI smoke tests pass for the published x64 previews.
 
 Brand assets and colors are sourced from CollectivIQ's official site. See `THIRD-PARTY-NOTICES.md` and `docs/IMPLEMENTATION-PLAN.md` for provenance and architecture.

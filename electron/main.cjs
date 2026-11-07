@@ -1,14 +1,22 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, Menu } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
-const { Store, fetchModels, shouldRefresh, validateMcp, memoryPrompt } = require('./core.cjs')
+const {
+  Store, fetchModels, shouldRefresh, validateMcp, memoryPrompt,
+  modelKey, findModel, normalizeEngineModels, mergeModels, FREE_PROVIDER,
+} = require('./core.cjs')
 const { Engine } = require('./engine.cjs')
+const {
+  CHECK_INTERVAL, isUpdateCheckDue, checkForUpdate, downloadUpdate, installUpdate, macBundlePath,
+} = require('./updates.cjs')
 
 app.setName('CIQ Developer Terminal')
 // Never share OpenCode's user data, credentials or service.
 const userDirectory = process.env.CIQ_TEST_USER_DATA || path.join(app.getPath('appData'), 'CIQ Developer Terminal')
 app.setPath('userData', userDirectory)
 let store, engine, window, quitting = false, refreshTimer, refreshInFlight
+let updateTimer, updateCheckInFlight, updateDownload
+let updateRuntime = { downloading: false, progress: 0, ready: false, installing: false, error: '', downloaded: null }
 
 function broadcast(event) {
   // Provider/config/credential events may carry sensitive engine internals.
@@ -25,25 +33,157 @@ function requireSession(project, id) {
   if (!project.sessions.some(s => s.id === id)) throw new Error('This conversation does not belong to the selected project.')
   return encodeURIComponent(id)
 }
-async function emitState() { broadcast({ type: 'ciq.state', data: await store.publicState() }) }
+function providerNames() {
+  const names = { [FREE_PROVIDER]: 'OpenCode Zen', collectiviq: 'CollectivIQ' }
+  for (const provider of store.state.providers) names[provider.id] = provider.name
+  return names
+}
+function allowedProviders() {
+  return [FREE_PROVIDER, 'collectiviq', ...store.state.providers.map(provider => provider.id)]
+}
+function currentSession(project, sessionID) {
+  return project.sessions.find(session => session.id === (sessionID || project.activeSessionID))
+}
+async function emitState() {
+  syncUpdateRuntime()
+  broadcast({ type: 'ciq.state', data: await store.publicState() })
+}
+function updatePublic() {
+  return { ...store.state.updates, ...updateRuntime, currentVersion: app.getVersion(), intervalDays: CHECK_INTERVAL / 86_400_000 }
+}
+function syncUpdateRuntime() {
+  store.runtime.version = app.getVersion()
+  store.runtime.update = updatePublic()
+}
+async function emitUpdateState() {
+  syncUpdateRuntime()
+  broadcast({ type: 'ciq.update', data: updatePublic() })
+  await emitState()
+}
 
 async function refreshModels() {
   if (refreshInFlight) return refreshInFlight
   refreshInFlight = (async () => {
     const key = await store.getKey()
-    if (!key) throw new Error('Connect your CollectivIQ Developer API key first.')
-    const models = await fetchModels(key)
-    const old = new Set(store.state.models.map(m => m.id))
-    store.state.newModels = models.filter(m => !old.has(m.id)).map(m => m.id)
+    let gatewayModels = []
+    let gatewayError = ''
+    if (key) {
+      try { gatewayModels = await fetchModels(key) }
+      catch (error) {
+        gatewayError = error.message
+        // Keep a previously validated catalog instead of silently dropping it.
+        gatewayModels = store.state.models.filter(model => model.providerID === 'collectiviq')
+        if (!store.state.freeEnabled && !store.state.providers.length) throw error
+      }
+    }
+    let engineModels = []
+    let engineError = ''
+    if (store.state.freeEnabled || store.state.providers.length) {
+      try {
+        const payload = await engine.request('GET', '/api/model')
+        engineModels = normalizeEngineModels(payload, providerNames(), allowedProviders())
+      } catch (error) { engineError = error.message }
+    }
+    const models = mergeModels(gatewayModels, engineModels)
+    if (!models.length) {
+      throw new Error(gatewayError || engineError || 'No models are available. Enable free models or connect a provider.')
+    }
+    const previous = new Set(store.state.models.map(modelKey))
+    store.state.newModels = models.filter(model => !previous.has(modelKey(model))).map(modelKey)
     store.state.models = models
     store.state.lastRefresh = Date.now()
-    if (!store.state.selectedModel) store.state.selectedModel = models[0].id
+    const selected = findModel(models, store.state.selectedModel)
+    store.state.selectedModel = modelKey(selected || models.find(model => model.free) || models[0])
     await store.save()
     await engine.config()
     await emitState()
+    if (gatewayError && engineModels.length) {
+      broadcast({ type: 'ciq.refresh.error', data: { message: `CollectivIQ models could not refresh. ${gatewayError}` } })
+    }
     return await store.publicState()
   })().finally(() => { refreshInFlight = null })
   return refreshInFlight
+}
+
+async function checkForUpdates({ manual = false } = {}) {
+  if (updateCheckInFlight) return updateCheckInFlight
+  if (!manual && !isUpdateCheckDue(store.state.updates.lastCheck)) return updatePublic()
+  updateCheckInFlight = (async () => {
+    updateRuntime = { ...updateRuntime, error: '' }
+    try {
+      const latest = await checkForUpdate({ currentVersion: app.getVersion() })
+      store.state.updates.lastCheck = Date.now()
+      store.state.updates.latest = latest
+      await store.save()
+      await emitUpdateState()
+      if (latest && latest.version !== store.state.updates.skippedVersion && store.state.updates.autoDownload !== false) {
+        void downloadUpdateFor(latest)
+      }
+      return updatePublic()
+    } catch (error) {
+      updateRuntime = { ...updateRuntime, error: error.message }
+      await emitUpdateState()
+      if (manual) throw error
+      return updatePublic()
+    }
+  })().finally(() => { updateCheckInFlight = null })
+  return updateCheckInFlight
+}
+
+async function downloadUpdateFor(latest) {
+  if (!latest) throw new Error('No update is available.')
+  if (updateRuntime.downloaded?.version === latest.version) return updateRuntime.downloaded
+  if (updateDownload?.version === latest.version) return updateDownload.promise
+  const extension = latest.install === 'zip' ? '.zip' : latest.install === 'tarball' ? '.tar.gz' : '.exe'
+  const file = path.join(app.getPath('temp'), `ciq-update-${latest.version}${extension}`)
+  let lastPercent = -1
+  updateRuntime = { ...updateRuntime, downloading: true, progress: 0, ready: false, installing: false, error: '', downloaded: null }
+  await emitUpdateState()
+  const promise = (async () => {
+    try {
+      const result = await downloadUpdate(latest, file, {
+        onProgress: ({ received, total }) => {
+          const progress = total > 0 ? Math.min(0.99, received / total) : 0
+          const percent = Math.floor(progress * 100)
+          if (percent === lastPercent) return
+          lastPercent = percent
+          updateRuntime = { ...updateRuntime, progress }
+          syncUpdateRuntime()
+          broadcast({ type: 'ciq.update.progress', data: { version: latest.version, progress, received, total } })
+        },
+      })
+      updateRuntime = { ...updateRuntime, downloading: false, ready: true, progress: 1, downloaded: { version: latest.version, ...result } }
+      await emitUpdateState()
+      return updateRuntime.downloaded
+    } catch (error) {
+      updateRuntime = { ...updateRuntime, downloading: false, ready: false, error: error.message, downloaded: null }
+      await emitUpdateState()
+      throw error
+    }
+  })().finally(() => { updateDownload = null })
+  updateDownload = { version: latest.version, promise }
+  return promise
+}
+
+async function installPendingUpdate() {
+  const latest = store.state.updates.latest
+  const downloaded = updateRuntime.downloaded
+  if (!latest || !downloaded || downloaded.version !== latest.version) throw new Error('The update has not finished downloading.')
+  updateRuntime = { ...updateRuntime, installing: true, error: '' }
+  await emitUpdateState()
+  try {
+    await installUpdate({
+      file: downloaded.file,
+      update: latest,
+      targetPath: process.platform === 'darwin' ? macBundlePath() : undefined,
+    })
+    setTimeout(() => app.quit(), 500)
+    return { installing: true, version: latest.version }
+  } catch (error) {
+    updateRuntime = { ...updateRuntime, installing: false, error: error.message }
+    await emitUpdateState()
+    throw error
+  }
 }
 
 async function action(command, p = {}) {
@@ -73,23 +213,34 @@ async function action(command, p = {}) {
     store.state.activeProjectID = store.state.projects.find(x => !x.closed)?.id
     await store.save(); return store.publicState()
   }
+  if (command === 'free.enable') {
+    store.state.freeEnabled = true
+    await store.save(); await engine.config()
+    return refreshModels()
+  }
   if (command === 'key.connect') {
     if (p.type !== 'developer') throw new Error('Use a Developer/Gateway key for model access. Standard keys are for the separate platform API.')
     const key = text(p.key, 4096).trim()
     if (key.length < 8 || /\s/.test(key)) throw new Error('Paste a valid Developer API key.')
     // Validate before replacing any existing key or model inventory.
-    const models = await fetchModels(key)
+    const gateway = await fetchModels(key)
     await engine.stop()
     await store.setKey(key, p.remember === true)
-    store.state.models = models
-    store.state.selectedModel = models.some(m => m.id === store.state.selectedModel) ? store.state.selectedModel : models[0].id
+    store.state.models = mergeModels(gateway, store.state.models.filter(model => model.providerID !== 'collectiviq'))
+    const selected = findModel(store.state.models, store.state.selectedModel)
+    store.state.selectedModel = selected ? modelKey(selected) : modelKey(gateway[0])
     store.state.lastRefresh = Date.now()
     store.state.toolsConfirmed = p.toolsConfirmed === true
     await store.save(); await engine.config()
-    return store.publicState()
+    return refreshModels()
   }
   if (command === 'key.disconnect') {
-    await engine.stop(); await store.clearKey(); return store.publicState()
+    await engine.stop(); await store.clearKey()
+    store.state.models = store.state.models.filter(model => model.providerID !== 'collectiviq')
+    const selected = findModel(store.state.models, store.state.selectedModel)
+    store.state.selectedModel = selected ? modelKey(selected) : store.state.models[0] ? modelKey(store.state.models[0]) : ''
+    await store.save(); await engine.config()
+    return refreshModels().catch(() => store.publicState())
   }
   if (command === 'models.refresh') return refreshModels()
   if (command === 'settings.save') {
@@ -99,10 +250,70 @@ async function action(command, p = {}) {
     }
     if (p.toolsConfirmed !== undefined) store.state.toolsConfirmed = p.toolsConfirmed === true
     if (p.selectedModel !== undefined) {
-      if (!store.state.models.some(m => m.id === p.selectedModel)) throw new Error('Choose a currently available gateway model.')
-      store.state.selectedModel = p.selectedModel
+      const selected = findModel(store.state.models, p.selectedModel)
+      if (!selected) throw new Error('Choose a currently available model.')
+      store.state.selectedModel = modelKey(selected)
     }
     await store.save(); await engine.config(); return store.publicState()
+  }
+  if (command === 'provider.list') {
+    const payload = await engine.request('GET', '/api/integration')
+    const connected = new Set(store.state.providers.map(provider => provider.id))
+    const data = (payload.data || [])
+      .filter(integration => integration?.methods?.some(method => method.type === 'env'))
+      .map(integration => ({
+        id: integration.id,
+        name: integration.name || integration.id,
+        env: integration.methods.find(method => method.type === 'env').names,
+        connected: connected.has(integration.id),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    return { data }
+  }
+  if (command === 'provider.connect') {
+    const providerID = text(p.providerID, 100)
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(providerID)) throw new Error('Choose a provider from the list.')
+    const key = text(p.key, 8192).trim()
+    if (key.length < 8 || /\s/.test(key)) throw new Error('Paste a valid provider API key.')
+    const payload = await engine.request('GET', '/api/integration')
+    const integration = (payload.data || []).find(item => item.id === providerID)
+    const method = integration?.methods?.find(item => item.type === 'env')
+    if (!method?.names?.length) throw new Error('This provider does not expose a key-based connection in this engine.')
+    await store.setProviderKey(providerID, key, p.remember === true)
+    const existing = store.state.providers.find(item => item.id === providerID)
+    if (existing) { existing.name = integration.name || providerID; existing.env = method.names }
+    else store.state.providers.push({ id: providerID, name: integration.name || providerID, env: method.names })
+    await store.save()
+    await engine.stop(); await engine.config()
+    return refreshModels()
+  }
+  if (command === 'provider.disconnect') {
+    const providerID = text(p.providerID, 100)
+    store.state.providers = store.state.providers.filter(provider => provider.id !== providerID)
+    await store.clearProviderKey(providerID)
+    store.state.models = store.state.models.filter(model => model.providerID !== providerID)
+    const selected = findModel(store.state.models, store.state.selectedModel)
+    store.state.selectedModel = selected ? modelKey(selected) : store.state.models[0] ? modelKey(store.state.models[0]) : ''
+    await store.save()
+    await engine.stop(); await engine.config()
+    return refreshModels().catch(() => store.publicState())
+  }
+  if (command === 'updates.check') return checkForUpdates({ manual: true })
+  if (command === 'updates.download') {
+    if (!store.state.updates.latest) throw new Error('Check for updates first.')
+    return downloadUpdateFor(store.state.updates.latest)
+  }
+  if (command === 'updates.install') return installPendingUpdate()
+  if (command === 'updates.skip') {
+    const version = text(p.version, 40)
+    store.state.updates.skippedVersion = version
+    await store.save(); await emitUpdateState()
+    return store.publicState()
+  }
+  if (command === 'updates.settings') {
+    if (p.autoDownload !== undefined) store.state.updates.autoDownload = p.autoDownload === true
+    await store.save(); await emitUpdateState()
+    return store.publicState()
   }
   if (command === 'mcp.add') {
     const mcp = validateMcp(p)
@@ -125,12 +336,17 @@ async function action(command, p = {}) {
     await store.save(); return store.publicState()
   }
   if (command === 'session.create') {
-    const model = p.model || store.state.selectedModel
-    if (!store.state.models.some(m => m.id === model)) throw new Error('Connect a key and select an available model first.')
-    if (!await store.getKey()) throw new Error('Connect your Developer API key first.')
-    const response = await engine.request('POST', '/api/session', { title: 'New conversation', model: { providerID: 'collectiviq', id: model }, location: { directory: project.directory }, permissions: [{ action: '*', resource: '*', effect: 'ask' }] })
+    const selected = findModel(store.state.models, p.model || store.state.selectedModel)
+    if (!selected) throw new Error('Choose an available model first.')
+    if (selected.providerID === 'collectiviq' && !await store.getKey()) throw new Error('Connect your CollectivIQ Developer API key first.')
+    const response = await engine.request('POST', '/api/session', {
+      title: 'New conversation',
+      model: { providerID: selected.providerID, id: selected.id },
+      location: { directory: project.directory },
+      permissions: [{ action: '*', resource: '*', effect: 'ask' }],
+    })
     const session = response.data
-    project.sessions.unshift({ id: session.id, title: session.title || 'New conversation', model, created: Date.now() })
+    project.sessions.unshift({ id: session.id, title: session.title || 'New conversation', model: modelKey(selected), created: Date.now() })
     project.activeSessionID = session.id
     await store.save(); return store.publicState()
   }
@@ -181,12 +397,13 @@ async function action(command, p = {}) {
   if (command === 'permission.list') return engine.request('GET', `${route}/permission`)
   if (command === 'form.list') return engine.request('GET', `${route}/form`)
   if (command === 'session.prompt') {
-    if (!await store.getKey()) throw new Error('Connect your Developer API key first.')
+    const saved = currentSession(project, p.sessionID)
+    const selected = findModel(store.state.models, saved?.model || store.state.selectedModel)
+    if (selected?.providerID === 'collectiviq' && !await store.getKey()) throw new Error('Connect your CollectivIQ Developer API key first.')
     const message = text(p.text).trim()
     if (!message) throw new Error('Write a prompt first.')
     const result = await engine.request('POST', `${route}/prompt`, { text: memoryPrompt(project, message), metadata: { ciqDisplayText: message } })
-    const saved = project.sessions.find(s => s.id === (p.sessionID || project.activeSessionID))
-    if (saved.title === 'New conversation') {
+    if (saved && saved.title === 'New conversation') {
       saved.title = message.slice(0, 70)
       await engine.request('PATCH', route, { title: saved.title }); await store.save(); await emitState()
     }
@@ -198,21 +415,26 @@ async function action(command, p = {}) {
     return engine.request('POST', `${route}/agent`, { agent: p.agent })
   }
   if (command === 'session.model') {
-    if (!store.state.models.some(m => m.id === p.model)) throw new Error('That model is no longer in the gateway catalog. Refresh and choose another.')
-    await engine.request('POST', `${route}/model`, { model: { providerID: 'collectiviq', id: p.model } })
-    project.sessions.find(s => s.id === (p.sessionID || project.activeSessionID)).model = p.model
+    const selected = findModel(store.state.models, p.model)
+    if (!selected) throw new Error('That model is no longer available. Refresh and choose another.')
+    if (selected.providerID === 'collectiviq' && !await store.getKey()) throw new Error('Connect your CollectivIQ Developer API key first.')
+    await engine.request('POST', `${route}/model`, { model: { providerID: selected.providerID, id: selected.id } })
+    const saved = currentSession(project, p.sessionID)
+    if (saved) saved.model = modelKey(selected)
     await store.save(); return store.publicState()
   }
   if (command === 'session.rename') {
     const title = text(p.title, 140).trim()
     if (!title) throw new Error('Provide a conversation title.')
     await engine.request('PATCH', route, { title })
-    project.sessions.find(s => s.id === (p.sessionID || project.activeSessionID)).title = title
+    const saved = currentSession(project, p.sessionID)
+    if (saved) saved.title = title
     await store.save(); return store.publicState()
   }
   if (command === 'session.archive') {
     await engine.request('PATCH', route, { archived: true })
-    project.sessions.find(s => s.id === (p.sessionID || project.activeSessionID)).archived = true
+    const saved = currentSession(project, p.sessionID)
+    if (saved) saved.archived = true
     project.activeSessionID = project.sessions.find(s => !s.archived)?.id
     await store.save(); return store.publicState()
   }
@@ -251,7 +473,9 @@ else {
   app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus() } })
   app.whenReady().then(async () => {
     store = await new Store(userDirectory, safeStorage).load()
+    store.runtime.version = app.getVersion()
     engine = new Engine(store, broadcast)
+    syncUpdateRuntime()
     ipcMain.handle('ciq:action', async (event, command, payload) => {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Unauthorized sender.')
       return action(command, payload)
@@ -264,18 +488,26 @@ else {
     ]))
     await createWindow()
     const catchUp = async () => {
-      if (shouldRefresh(store.state.lastRefresh, store.state.cadence) && await store.getKey()) {
+      const key = await store.getKey()
+      const hasFree = store.state.models.some(model => model.providerID === FREE_PROVIDER)
+      const needsFree = store.state.freeEnabled && !hasFree
+      const needsModels = !store.state.models.length
+      const due = shouldRefresh(store.state.lastRefresh, store.state.cadence)
+      if (needsFree || needsModels || (due && (key || store.state.freeEnabled || store.state.providers.length))) {
         await refreshModels().catch(error => broadcast({ type: 'ciq.refresh.error', data: { message: error.message } }))
       }
     }
     await catchUp()
     refreshTimer = setInterval(() => { void catchUp() }, 60_000)
+    setTimeout(() => { void checkForUpdates() }, 6000)
+    updateTimer = setInterval(() => { void checkForUpdates() }, 6 * 60 * 60 * 1000)
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
   }).catch(error => { dialog.showErrorBox('CIQ could not start', error.message); app.quit() })
   app.on('window-all-closed', () => { app.quit() })
   app.on('before-quit', event => {
     if (quitting) return
-    event.preventDefault(); quitting = true; clearInterval(refreshTimer)
+    event.preventDefault(); quitting = true
+    clearInterval(refreshTimer); clearInterval(updateTimer)
     Promise.resolve(engine?.stop()).finally(() => app.quit())
   })
 }
