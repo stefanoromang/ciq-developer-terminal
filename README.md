@@ -141,7 +141,7 @@ The workflow in `.github/workflows/build.yml` builds native artifacts on separat
 - Only CollectivIQ Gateway is supported in the first-run UI. Extra provider keys are deliberately not required or requested. Gateway access is the model source.
 - No latency, RAM, or package-size improvement over OpenCode has been established. Electron and the native engine are substantial dependencies. The frontend itself is bundled locally without remote scripts or analytics.
 - Live gateway generation needs a valid user key. Fixtures and local engine tests do not establish live provider compatibility, pricing, account entitlement, or consensus availability.
-- Release signing/notarization and Windows/Linux runtime validation are separate release tasks.
+- Release signing/notarization, validation on a Debian host and broader end-user OS coverage remain release tasks. Windows and Ubuntu Linux native CI smoke tests pass for the published x64 previews.
 
 Brand assets and colors are sourced from CollectivIQ's official site. See `THIRD-PARTY-NOTICES.md` and `docs/IMPLEMENTATION-PLAN.md` for provenance and architecture.
 
