@@ -8,7 +8,7 @@ An independently designed, CollectivIQ-first desktop developer workspace with
 a left sidebar, project conversations, editable project memory, MCP controls,
 and a model catalog that comes from your API key—not a hard-coded list.
 
-**Version 0.1.1 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
+**Version 0.1.2 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
 · [Build and installation](#build) · [Original OpenCode source](https://github.com/anomalyco/opencode)
 
 ![CIQ Developer Terminal workspace with left-side navigation and CollectivIQ branding](docs/images/workspace.png)
@@ -33,10 +33,21 @@ This is an independent project, not an official OpenCode or CollectivIQ distribu
 ## Downloads and platform status
 
 Use the [GitHub Releases page](https://github.com/stefanoromang/ciq-developer-terminal/releases).
-The macOS Apple Silicon preview is built and locally tested. Windows and
-Debian/Linux packaging configuration is included, but those artifacts should
-not be considered validated until their native builds and smoke tests pass.
-The macOS preview is **unsigned and not notarized**.
+Windows x64 setup/portable and Linux x64 portable packages have passed native
+CI build and smoke tests. Linux was tested on Ubuntu 22.04; Debian desktop
+use still depends on the required libraries and sandbox support. The macOS
+Apple Silicon 0.1.1 preview is built and locally tested. Downloads are
+**unsigned**, and the macOS preview is **not notarized**.
+
+| Download | Format |
+|---|---|
+| [Windows x64 installer](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.1.2/CIQ-Developer-Terminal-0.1.2-windows-x64-setup.exe) | Per-user setup, no installer elevation |
+| [Windows x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.1.2/CIQ-Developer-Terminal-0.1.2-windows-x64-portable.exe) | Run without installing |
+| [Linux x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.1.2/CIQ-Developer-Terminal-0.1.2-linux-x64.tar.gz) | Extract and run as your user |
+| [macOS Apple Silicon 0.1.1](https://github.com/stefanoromang/ciq-developer-terminal/releases/tag/v0.1.1) | Install in `~/Applications` |
+
+See [download instructions](docs/DOWNLOADS.md) and
+[0.1.2 validation/release notes](docs/RELEASE-0.1.2.md).
 
 ## Features
 

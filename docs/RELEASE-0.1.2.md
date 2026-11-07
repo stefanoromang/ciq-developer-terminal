@@ -9,7 +9,7 @@
 | Windows 10/11, x64 | `CIQ-Developer-Terminal-0.1.2-windows-x64-setup.exe` | Run as your normal user. Installs in your user profile; installer elevation is disabled. |
 | Windows 10/11, x64 portable | `CIQ-Developer-Terminal-0.1.2-windows-x64-portable.exe` | Run directly, without an installer. |
 | Linux desktop, x64 | `CIQ-Developer-Terminal-0.1.2-linux-x64.tar.gz` | Extract to a folder you own, then run `./ciq-developer-terminal`. No root installation. |
-| macOS, Apple Silicon | macOS arm64 ZIP | Extract and move the app to `~/Applications`. |
+| macOS, Apple Silicon | [Existing 0.1.1 download](https://github.com/stefanoromang/ciq-developer-terminal/releases/tag/v0.1.1) | Extract and move the app to `~/Applications`. The 0.1.2 macOS CI runner was unavailable. |
 
 Only assets actually attached to this release are available. ARM Windows/Linux
 and Intel macOS are not provided by this build matrix.
@@ -37,6 +37,22 @@ and Intel macOS are not provided by this build matrix.
 - Native OS engine, renderer and IPC tests, packaged-engine/native tests and
   a Windows install-to-user-profile smoke test in the build workflow.
 - SHA-256 checksum files supplied alongside downloads.
+
+## Validation for these binaries
+
+Built from commit `30409263d1a310af58d16206ccbd663144ab0bea` in
+[GitHub Actions run 42423455785](https://github.com/stefanoromang/ciq-developer-terminal/actions/runs/42423455785).
+
+- **Windows x64:** engine/unit/fixture tests, renderer and native IPC tests,
+  packaged engine/native app tests, and installation into a user-profile folder
+  all passed on the Windows runner.
+- **Linux x64:** engine/unit/fixture tests, sandbox-enabled renderer/native IPC
+  tests, packaging, and packaged engine/native app tests all passed on Ubuntu 22.04.
+- **Debian:** no separate Debian-host smoke test has been performed. Debian
+  desktop compatibility remains subject to shared libraries and sandbox support.
+- The overall workflow is marked failed because the **unrelated macOS runner
+  could not start**; the Windows and Linux jobs individually completed successfully.
+- Live CollectivIQ requests are not part of these fixture tests.
 
 ## Upstream attribution
 

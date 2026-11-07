@@ -1,5 +1,46 @@
 # Validation — November 7, 2026
 
+## 0.1.2 Windows / Linux native build validation
+
+Build evidence: [GitHub Actions run 42423455785](https://github.com/stefanoromang/ciq-developer-terminal/actions/runs/42423455785),
+source commit `30409263d1a310af58d16206ccbd663144ab0bea`.
+
+- **Windows x64 job succeeded:** 13 engine/unit/fixture tests, desktop renderer
+  and native IPC smoke tests, NSIS + portable packaging, packaged engine and
+  native app smoke tests, silent per-user installation into `LOCALAPPDATA`,
+  then engine and native app checks from that installed directory. The hosted
+  CI account's privileges do not establish behavior on every managed Windows
+  machine; no-elevation configuration is additionally asserted by local tests.
+- **Linux x64 job succeeded on Ubuntu 22.04:** the same 13 engine/unit/fixture
+  tests, sandbox-enabled desktop/native tests under Xvfb, tarball packaging,
+  packaged engine/native checks, and checksum generation.
+- **Not tested on a Debian host:** modern Debian desktop environments remain
+  subject to shared-library and user-namespace sandbox requirements.
+- **macOS job unavailable:** the `macos-14` runner configuration was rejected
+  before execution. The overall workflow therefore did not pass as a whole;
+  Windows and Linux jobs each passed independently. The existing 0.1.1 local
+  macOS validation remains the published Mac download's evidence.
+- Two later packaging-configuration assertions pass locally (15 tests total);
+  those test-only additions were not in the 13-test CI binary build commit.
+- Downloads are unsigned preview artifacts. No real CollectivIQ key or live
+  provider generation was used in these checks.
+
+Downloaded CI artifacts were checked against their runner-generated SHA-256
+files before release upload:
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| Windows x64 setup | 425,260,012 | `eed7f40c5d1065b598412fe40b6769638134ac6da97b429457f0a441a7cbf4f4` |
+| Windows x64 portable | 395,996,098 | `5f8c42381e0fd443eacbf5335434445a32f356a496dda3be9c4eccdecc7349db` |
+| Linux x64 tar.gz | 594,110,773 | `cced0b01cd6df362646533ad50b7ddd2a55ac9c65c5af55535bc008c6b3cb259` |
+
+The Linux archive's launcher is mode `0755`, under the top-level folder
+`CIQ-Developer-Terminal-0.1.2-linux-x64`; member paths were checked for absolute
+paths and `..` traversal. No claim of a smaller footprint than OpenCode is made.
+
+The sections below retain the original macOS delivery record and its then-current
+release blockers; they do not override the newer platform evidence above.
+
 ## 0.1.1 creator-branded update
 
 - Creator metadata, sidebar credit and Settings attribution identify **Stefano Roman Gunness** as creator of the independent CIQ interface.
