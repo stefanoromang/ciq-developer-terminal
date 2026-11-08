@@ -85,7 +85,13 @@ app.whenReady().then(async () => {
   fs.mkdirSync(path.join(__dirname, '..', 'test-results'), { recursive: true })
   await window.webContents.executeJavaScript('document.fonts.ready')
   fs.writeFileSync(path.join(__dirname, '..', 'test-results', 'native-onboarding.png'), (await window.webContents.capturePage()).toPNG())
-  const enginePid = info.pid
+  await window.webContents.executeJavaScript('window.ciq.invoke("engine.restart")')
+  const restarted = await window.webContents.executeJavaScript('window.ciq.invoke("engine.info")')
+  assert.notEqual(restarted.pid, info.pid)
+  assert.throws(() => process.kill(info.pid, 0))
+  const preserved = await window.webContents.executeJavaScript('window.ciq.invoke("state")')
+  assert.equal(preserved.projects.length, 1)
+  const enginePid = restarted.pid
   console.log(JSON.stringify({ success: true, nativeBridge: true, version: info.version, secureStorage: state.secureStorage, enginePid, security }, null, 2))
   app.once('will-quit', () => {
     assert.throws(() => process.kill(enginePid, 0), 'Owned engine must stop when the app quits')

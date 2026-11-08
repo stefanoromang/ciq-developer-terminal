@@ -14,6 +14,15 @@ const RELEASES_API = `https://api.github.com/repos/${REPOSITORY}/releases?per_pa
 const USER_AGENT = 'CIQ-Developer-Terminal'
 const CHECK_INTERVAL = 3.5 * 24 * 60 * 60 * 1000 // twice a week
 
+async function launchDetached(spawnImpl, file, args, options) {
+  const child = spawnImpl(file, args, options)
+  if (typeof child.once === 'function') await new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('spawn', resolve)
+  })
+  child.unref()
+}
+
 function parseVersion(value) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(value || '').trim())
   if (!match) return null
@@ -193,7 +202,7 @@ async function installUpdate({
   if (platform === 'win32') {
     if (update.install === 'nsis') {
       const directory = targetPath || path.dirname(execPath)
-      spawnImpl(file, ['/S', '/currentuser', `/D=${directory}`], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+      await launchDetached(spawnImpl, file, ['/S', '/currentuser', `/D=${directory}`], { detached: true, stdio: 'ignore', windowsHide: true })
       return { mode: 'installer' }
     }
     const target = portable || execPath
@@ -213,10 +222,10 @@ async function installUpdate({
       'start "" "%TARGET%"',
       '',
     ].join('\r\n'))
-    spawnImpl('cmd.exe', ['/c', script], {
+    await launchDetached(spawnImpl, 'cmd.exe', ['/c', script], {
       detached: true, stdio: 'ignore', windowsHide: true,
       env: { ...process.env, SOURCE: file, TARGET: target },
-    }).unref()
+    })
     return { mode: 'portable-replace' }
   }
   if (platform === 'darwin') {
@@ -241,10 +250,10 @@ async function installUpdate({
       '/usr/bin/open "$TARGET"',
       '',
     ].join('\n'), { mode: 0o700 })
-    spawnImpl('/bin/sh', [script], {
+    await launchDetached(spawnImpl, '/bin/sh', [script], {
       detached: true, stdio: 'ignore',
       env: { ...process.env, TARGET: target, SOURCE: staged, BACKUP: path.join(stage, 'previous.app') },
-    }).unref()
+    })
     return { mode: 'bundle-replace', target }
   }
   if (platform === 'linux') {
@@ -272,10 +281,10 @@ async function installUpdate({
       '"$LAUNCH" >/dev/null 2>&1 &',
       '',
     ].join('\n'), { mode: 0o700 })
-    spawnImpl('/bin/sh', [script], {
+    await launchDetached(spawnImpl, '/bin/sh', [script], {
       detached: true, stdio: 'ignore',
       env: { ...process.env, TARGET: target, SOURCE: staged, BACKUP: path.join(stage, 'previous'), LAUNCH: launch },
-    }).unref()
+    })
     return { mode: 'directory-replace', target }
   }
   throw new Error(`Automatic updates are not supported on ${platform}.`)

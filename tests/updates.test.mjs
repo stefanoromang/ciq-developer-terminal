@@ -174,3 +174,8 @@ test('install helpers launch detached and never request elevation', async () => 
   assert.equal(calls[0].options.detached, true)
   assert.equal(calls[0].options.windowsHide, true)
 })
+test('installer spawn failures are returned before the app quits', async () => {
+  const { EventEmitter } = await import('node:events')
+  await assert.rejects(installUpdate({ platform: 'win32', file: 'missing.exe', update: { install: 'nsis' }, pid: 1234,
+    spawnImpl: () => { const child = new EventEmitter(); child.unref = () => {}; queueMicrotask(() => child.emit('error', new Error('installer not found'))); return child } }), /installer not found/)
+})

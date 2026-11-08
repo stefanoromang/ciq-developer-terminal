@@ -80,6 +80,7 @@ export default function App() {
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
+  const pagedHistory = useRef(false)
   const stateRef = useRef(state)
   stateRef.current = state
   const project = state.projects.find(p => p.id === state.activeProjectID && !p.closed)
@@ -104,6 +105,7 @@ export default function App() {
     if (next?.projects) setState(next)
     return next
   }, [])
+  const historySession = useRef<string | undefined>(undefined)
   const refreshConversation = useMemo(() => coalescedRefresh(async () => {
     const selected = { ...activeRef.current }
     if (!selected.sessionID) return
@@ -112,13 +114,16 @@ export default function App() {
       bridge.invoke('permission.list', selected), bridge.invoke('form.list', selected),
     ])
     if (activeRef.current.sessionID !== selected.sessionID) return
+    const retainHistory = historySession.current === selected.sessionID
+    historySession.current = selected.sessionID
     setMessages(previous => {
       const incoming: Message[] = [...(result.data || [])].reverse()
+      if (!retainHistory) return incoming
       const ids = new Set(incoming.map(message => message.id))
       return [...previous.filter(message => !ids.has(message.id) && (!incoming.length || (message.time?.created || 0) < (incoming[0].time?.created || 0))), ...incoming]
     })
     setBusy(value => ({ ...value, [selected.sessionID!]: result.active === true }))
-    setOlderCursor(result.cursor?.next || null)
+    if (!pagedHistory.current) setOlderCursor(result.cursor?.next || null)
     if (activeRef.current.sessionID !== selected.sessionID) return
     setPermissions(perms.data || [])
     setForms(questions.data || [])
@@ -146,6 +151,7 @@ export default function App() {
   }, [refreshConversation])
   useEffect(() => {
     setMessages([]); setPermissions([]); setForms([]); setOlderCursor(null)
+    pagedHistory.current = false
     pinned.current = true
     void refreshConversation().catch(e => setError(niceError(e)))
   }, [session?.id, refreshConversation])
@@ -293,7 +299,7 @@ export default function App() {
             <h1>Good ideas deserve<br /><span>great company.</span></h1><p className="welcome-description">Your code, your context, your choice of AI.<br />One workspace. Built around you.</p>
             <div className="welcome-project"><FolderOpen size={16} /><span>{project ? project.name : 'Start with a project folder'}</span>{project ? <span className="tag">LOCAL</span> : <button onClick={openProject}>Open project<ArrowRight size={14} /></button>}</div>
             <div className="starter-grid"><button onClick={() => promptStarter('Explore this codebase. Explain its architecture, entry points, and how to run it. Do not change files.')}><Code size={21} /><strong>Understand a codebase</strong><span>Find your way around a new project.</span><ArrowUp size={15} /></button><button onClick={() => promptStarter('Help me plan a new feature for this project. First ask what I want to build, then propose an implementation plan.')}><Sparkle size={21} /><strong>Build something new</strong><span>Turn an idea into your next feature.</span><ArrowUp size={15} /></button><button onClick={() => promptStarter('Review the current project changes for bugs, security issues, and missing tests. Explain findings before editing anything.')}><GitBranch size={21} /><strong>Review your changes</strong><span>A second perspective on your work.</span><ArrowUp size={15} /></button></div>
-          </div> : <div className="message-list">{olderCursor && <button className="load-older" disabled={pending} onClick={() => void run(async () => { const result = await bridge.invoke('session.messages', { projectID: project?.id, sessionID: session?.id, cursor: olderCursor }); pinned.current = false; setMessages(value => [...result.data.reverse(), ...value]); setOlderCursor(result.cursor?.next || null) })}>Load earlier messages</button>}
+          </div> : <div className="message-list">{olderCursor && <button className="load-older" disabled={pending} onClick={() => void run(async () => { const selected = { ...activeRef.current }; const result = await bridge.invoke('session.messages', { ...selected, cursor: olderCursor }); if (activeRef.current.sessionID !== selected.sessionID) return; pinned.current = false; pagedHistory.current = true; setMessages(value => { const ids = new Set(value.map(message => message.id)); return [...result.data.reverse().filter((message: Message) => !ids.has(message.id)), ...value] }); setOlderCursor(result.cursor?.next || null) })}>Load earlier messages</button>}
             <div className="conversation-title"><span>{session?.created ? relativeDate(session.created) : 'Conversation'}</span><div><button className="icon-button" aria-label="Rename conversation" onClick={() => { setRenameTitle(session?.title || ''); setRename(true) }}><PencilSimple size={16} /></button><button className="icon-button" aria-label="Archive conversation" onClick={() => void run(() => callState('session.archive', { projectID: project?.id, sessionID: session?.id }))}><Archive size={16} /></button></div></div>
             {messages.filter(m => ['user', 'assistant', 'synthetic', 'compaction'].includes(m.type)).map(message => message.type === 'synthetic' || message.type === 'compaction' ? <div className="timeline-note" key={message.id}>{message.type === 'compaction' ? 'Conversation context compacted' : 'Project context added'}</div> : <MessageView message={message} key={message.id} />)}
             {isBusy && <div className="working-status" role="status"><Lightning size={16} />CIQ is working<span /> <button onClick={() => void run(() => bridge.invoke('session.interrupt', { projectID: project?.id, sessionID: session?.id }))}>Stop</button></div>}
@@ -311,7 +317,7 @@ export default function App() {
           })}</div>}<div className="quiet-note"><PlugsConnected size={16} />Remote servers use OAuth when available. No secrets in project files.<button onClick={() => void bridge.invoke('external.open', { url: 'https://modelcontextprotocol.io/introduction' })}>About MCP<ArrowSquareOut size={13} /></button></div></>}
         {page === 'memory' && (!project ? <div className="empty-panel"><Brain size={44} weight="light" /><h2>Every project gets its own context.</h2><p>Open a project to save decisions, coding conventions, and useful notes.</p><Button primary onClick={openProject}><FolderOpen size={17} />Open a project</Button></div> : <><div className="memory-project"><div className="connection-icon"><Folder size={23} /></div><div><strong>{project.name}</strong><code>{project.directory}</code></div><label className="toggle-label"><input type="checkbox" checked={memoryEnabled} onChange={event => setMemoryEnabled(event.target.checked)} /><span>Include in prompts</span></label></div><label className="field memory-field"><span>Project notes</span><textarea value={memory} maxLength={16_000} onChange={event => setMemory(event.target.value)} placeholder={'What should CIQ remember about this project?\n\nArchitecture decisions, preferred tools, coding conventions, or the next thing to work on.'} /><small>{memory.length.toLocaleString()} / 16,000 characters · Saved locally, separate from your repository</small></label><div className="button-row"><Button primary disabled={pending} onClick={() => void run(async () => { await callState('memory.save', { projectID: project.id, memory, enabled: memoryEnabled }); setNotice('Project notes saved.') })}><Check size={16} />Save project notes</Button></div><div className="info-strip"><Brain size={19} /><span>These are explicit notes you control—not hidden automatic memory. When enabled, they are sent to your selected model with each new prompt for this project. Conversation history is stored by the local engine.</span></div></>)}
         {page === 'models' && <><div className="model-summary"><div><span className={`status-dot ${canChat ? 'good' : ''}`} /><strong>{state.connected ? 'CollectivIQ + free models' : 'Free & connected models'}</strong><span className="tag">{state.models.length} MODELS</span></div><Button disabled={pending || (!state.connected && !state.freeEnabled && !state.providers.length)} onClick={() => void run(async () => { await callState('models.refresh'); setNotice('Model catalog refreshed. Existing conversations keep their selected model.') })}><ArrowClockwise size={16} />Refresh models</Button></div>
-          <div className="provider-cards"><div className={`provider-card ${state.freeEnabled ? 'active' : ''}`}><div className="provider-card-head"><Sparkle size={20} /><div><strong>OpenCode Zen</strong><span>Free coding models · no API key</span></div><span className="tag free">FREE</span></div><p>Every free coding model currently advertised by OpenCode. Refresh to discover additions; availability and quotas are controlled by OpenCode.</p>{state.freeEnabled ? <span className="provider-status"><CheckCircle size={15} weight="fill" />Enabled</span> : <Button onClick={() => void run(enableFree)}>Enable free models</Button>}</div>
+          <div className="provider-cards"><div className={`provider-card ${state.freeEnabled ? 'active' : ''}`}><div className="provider-card-head"><Sparkle size={20} /><div><strong>OpenCode Zen</strong><span>Free coding models · no API key</span></div><span className="tag free">FREE</span></div><p>Every free coding model currently advertised by OpenCode. Refresh to discover additions; availability and quotas are controlled by OpenCode.</p>{state.freeEnabled ? <span className="provider-status"><CheckCircle size={15} weight="fill" />Enabled</span> : <Button onClick={enableFree}>Enable free models</Button>}</div>
             <div className="provider-card"><div className="provider-card-head"><Key size={20} /><div><strong>CollectivIQ</strong><span>{state.connected ? (state.credentialStatus === 'saved' ? 'API key saved securely · restored on launch' : 'Session-only key') : 'Optional · use your account’s models'}</span></div>{state.connected && <span className="tag good">KEY</span>}</div><p>Use every model your CollectivIQ account exposes through one Developer/Gateway key.</p><Button onClick={() => setOnboarding(true)}>{state.connected ? 'Manage key' : 'Connect key'}</Button></div>
             {state.providers.map(provider => <div className="provider-card" key={provider.id}><div className="provider-card-head"><PlugsConnected size={20} /><div><strong>{provider.name}</strong><span>{provider.credentialStatus === 'saved' ? 'API key saved securely · restored on launch' : provider.credentialStatus === 'session' ? 'Session-only key · reconnect after quitting' : 'Reconnect your API key'}</span></div><span className="tag good">{provider.connected ? 'KEY' : 'OFFLINE'}</span></div><p>{provider.env.join(', ')}</p><div className="button-row"><Button onClick={() => setProviderModal(true)}>{provider.connected ? 'Replace key' : 'Reconnect'}</Button><Button disabled={pending} onClick={() => void run(() => callState('provider.disconnect', { providerID: provider.id }))}>Disconnect</Button></div></div>)}
             <button className="provider-add" onClick={() => setProviderModal(true)}><Plus size={18} /><span>Connect another provider<small>Bring your own key for OpenAI, Anthropic, Google, Groq, OpenRouter and more.</small></span></button></div>

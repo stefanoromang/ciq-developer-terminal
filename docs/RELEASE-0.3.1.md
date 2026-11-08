@@ -35,10 +35,14 @@ they are not bare-metal or every-desktop-environment certification. Windows per-
 installer checks remain part of the build. Signing and macOS notarization are
 outstanding; platform policy and Linux desktop libraries still apply.
 
-Forty local tests cover the engine, vaults, imports, update verification, streaming
+Forty-one local tests cover the engine, vaults, imports, update verification, streaming
 refresh bursts, locked credentials and shutdown/startup races. See the tagged
 Actions run for cross-platform results. Optimizations reduce redundant work;
 no universal speed or memory improvement is claimed without benchmarking.
+
+The local packaged macOS smoke run reached a ready engine and exited cleanly
+in 3,986 ms, with sandbox enabled. This is one development-machine measurement,
+not a comparison against an earlier release or a cross-platform benchmark.
 
 ## Use the app
 

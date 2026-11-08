@@ -26,6 +26,11 @@ function broadcast(event) {
   // Provider/config/credential events may carry sensitive engine internals.
   // The renderer only needs projected session lifecycle notifications.
   if (!/^(ciq\.|session\.|permission\.|form\.|mcp\.|server\.connected)/.test(event.type)) return
+  // The UI refreshes projected messages; token text is not consumed from IPC.
+  // Avoid transferring large incremental payloads that will be discarded.
+  if (/^session\.(text|reasoning)\.delta$|^session\.tool\.input\.delta$/.test(event.type)) {
+    event = { type: event.type, data: { sessionID: event.data?.sessionID } }
+  }
   if (window && !window.isDestroyed()) {
     let serialized = JSON.stringify(event)
     for (const key of [store?.key, ...Object.values(store?.providerKeys || {}), ...Object.values(store?.savedProviderKeys || {})]) {
@@ -83,8 +88,8 @@ async function refreshModels() {
   if (refreshInFlight) return refreshInFlight
   refreshInFlight = (async () => {
     const key = await store.getKey().catch(() => null)
-    // Independent catalogs start together so a slow gateway cannot delay free
-    // models. Preserve each provider's previous catalog independently on failure.
+    // Fetch independent catalogs concurrently rather than paying both latencies
+    // in sequence. Preserve each provider's previous catalog on failure.
     const engineCatalog = engine.request('GET', '/api/model').then(payload => ({ payload }), error => ({ error }))
     let gatewayModels = []
     let gatewayError = ''
@@ -220,6 +225,7 @@ async function action(command, p = {}) {
   if (command === 'state') return store.publicState()
   if (command === 'engine.info') return engine.request('GET', '/api/info')
   if (command === 'engine.restart') {
+    if (refreshInFlight) await refreshInFlight.catch(() => {})
     await engine.stop()
     await engine.ensure()
     await refreshModels()

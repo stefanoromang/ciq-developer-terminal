@@ -50,7 +50,7 @@ class Engine {
     if (this.stopTask) await this.stopTask
     if (this.starting) return this.starting
     if (this.url) return this.url
-    this.starting = this.start(this.epoch).finally(() => { this.starting = null })
+    this.starting = this.start(this.epoch).catch(error => { this.status = 'stopped'; throw error }).finally(() => { this.starting = null })
     return this.starting
   }
   async start(epoch) {

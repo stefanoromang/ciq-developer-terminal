@@ -1,5 +1,27 @@
 # Validation — November 7, 2026
 
+## 0.3.1 stability work
+
+- 41 tests pass locally. New regression coverage: concurrent engine requests,
+  canceling startup on shutdown, locked-key free-mode fallback, avoiding redundant
+  config writes, serialized work after failures, and a 100-event refresh burst
+  producing two non-overlapping refreshes.
+- Local desktop and native bridge checks pass, including diagnostics and sandbox
+  assertions. Engine and UI failures have recovery controls.
+- The actual packaged macOS executable starts, serves a ready engine, verifies
+  sandbox status and exits cleanly. One measured run took 3,986 ms end-to-end.
+  Native IPC restart tests verify a new engine PID and preserved projects.
+- 0.3.0's Windows and macOS CI jobs passed, but Ubuntu's screenshot capture failed
+  with `UnknownVizError`, so release publication was blocked. The Linux test
+  harness now uses software rendering and a DBus session under Xvfb, preserving
+  Chromium's sandbox. The production app retains normal hardware acceleration.
+- 0.3.1 adds actual packaged executable launch checks and Debian 12/13 Docker
+  userland tests running as non-root. Consult the new workflow results before
+  treating those checks as passed. Container validation is not bare-metal validation.
+- Performance changes remove redundant requests/config reloads and parallelize
+  independent catalog/permission reads; universal latency or RAM improvements
+  have not been benchmarked.
+
 ## 0.3.0 local validation
 
 - 35 unit/engine/fixture tests pass on macOS arm64. Coverage includes six import

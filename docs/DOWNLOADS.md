@@ -27,7 +27,7 @@ Extract the downloaded archive into a directory you own:
 
 ```sh
 mkdir -p "$HOME/Applications/CIQ-Developer-Terminal"
-tar -xzf "$HOME/Downloads/CIQ-Developer-Terminal-0.3.0-linux-x64.tar.gz" \
+tar -xzf "$HOME/Downloads/CIQ-Developer-Terminal-0.3.1-linux-x64.tar.gz" \
   -C "$HOME/Applications/CIQ-Developer-Terminal"
 ```
 
@@ -60,15 +60,15 @@ Compare the SHA-256 hash with the checksum file attached to the same release:
 
 ```powershell
 # Windows PowerShell
-Get-FileHash .\CIQ-Developer-Terminal-0.3.0-windows-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\CIQ-Developer-Terminal-0.3.1-windows-x64-setup.exe -Algorithm SHA256
 ```
 
 ```sh
 # Linux
-sha256sum CIQ-Developer-Terminal-0.3.0-linux-x64.tar.gz
+sha256sum CIQ-Developer-Terminal-0.3.1-linux-x64.tar.gz
 
 # macOS
-shasum -a 256 'CIQ-Developer-Terminal-0.3.0-mac-arm64.zip'
+shasum -a 256 'CIQ-Developer-Terminal-0.3.1-mac-arm64.zip'
 ```
 
 Use the actual name of your download if it differs from these examples.
@@ -96,4 +96,12 @@ API catalog.
 CIQ 0.2.0 and later check this repository's GitHub releases about twice a week,
 catch up on launch, and download newer versions automatically. Each download is
 SHA-256 verified before installation, and CIQ asks before restarting. The 0.1.2
-preview has no updater, so install 0.3.0 manually once.
+preview has no updater, so install 0.3.1 manually once.
+
+## Troubleshooting
+
+Use **Settings → Engine health & recovery → Check engine** for a local status
+report. **Restart engine** stops current requests and reconnects to saved
+conversations. Copy the diagnostics when reporting a reproducible problem.
+For a missing or moved project, reopen its new folder path. If a saved key
+cannot be unlocked, free models remain available while you reconnect that key.
