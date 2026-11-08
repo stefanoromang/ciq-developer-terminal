@@ -13,7 +13,7 @@ export type UpdateInfo = {
 export type Workspace = {
   projects: Project[]; activeProjectID?: string; connected: boolean; secureStorage: boolean; models: Model[]; selectedModel: string
   cadence: 'daily' | 'weekly' | 'manual'; lastRefresh: number; toolsConfirmed: boolean; mcps: Mcp[]; newModels?: string[]
-  gateway: string; freeProvider: string; freeEnabled: boolean; modelsAvailable: boolean; providers: ProviderConnection[]; updates: UpdateInfo; credentialStatus?: string
+  gateway: string; freeProvider: string; freeEnabled: boolean; modelsAvailable: boolean; providers: ProviderConnection[]; updates: UpdateInfo; credentialStatus?: string; credentialError?: string
 }
 export type Content = { type: string; text?: string; name?: string; id?: string; state?: { status: string; input?: unknown; content?: { type: string; text?: string }[]; error?: string } }
 export type Message = { id: string; type: string; text?: string; metadata?: { ciqDisplayText?: string }; content?: Content[]; model?: { id: string }; error?: { message?: string }; time?: { created: number } }

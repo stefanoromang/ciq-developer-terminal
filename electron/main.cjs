@@ -478,8 +478,14 @@ async function action(command, p = {}) {
     if (!message) throw new Error('Write a prompt first.')
     const result = await engine.request('POST', `${route}/prompt`, { text: memoryPrompt(project, message), metadata: { ciqDisplayText: message } })
     if (saved && saved.title === 'New conversation') {
-      saved.title = message.slice(0, 70)
-      await engine.request('PATCH', route, { title: saved.title }); await store.save(); await emitState()
+      // Prompt acceptance must not be reported as a failure if cosmetic title
+      // saving fails afterward: retrying would send the same prompt twice.
+      try {
+        const title = message.slice(0, 70)
+        await engine.request('PATCH', route, { title })
+        saved.title = title
+        await store.save(); await emitState()
+      } catch { broadcast({ type: 'ciq.refresh.error', data: { message: 'Your prompt was sent, but its conversation title could not be saved.' } }) }
     }
     return result
   }
