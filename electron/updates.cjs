@@ -80,7 +80,14 @@ function selectRelease(releases, { currentVersion, platform = process.platform, 
     for (const candidate of assetCandidates(entry.version, platform, arch)) {
       const asset = entry.release.assets.find(item => item && item.name === candidate.name && item.state !== 'new')
       if (!asset || typeof asset.browser_download_url !== 'string') continue
-      const checksums = entry.release.assets.find(item => item && /^SHA256SUMS/i.test(item.name) && typeof item.browser_download_url === 'string')
+      // A release can carry one checksum file per platform. Prefer the file for
+      // this platform/architecture; fall back to a combined file, then any.
+      const checksumAssets = entry.release.assets.filter(item =>
+        item && /^SHA256SUMS/i.test(item.name) && typeof item.browser_download_url === 'string')
+      const platformToken = platform.toLowerCase()
+      const checksums = checksumAssets.find(item => item.name.toLowerCase().includes(platformToken) && item.name.includes(arch))
+        || checksumAssets.find(item => item.name.toLowerCase().includes(platformToken))
+        || checksumAssets[0] || null
       return {
         version: entry.version,
         tag: entry.release.tag_name,

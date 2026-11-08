@@ -59,6 +59,23 @@ test('release selection ignores drafts, older tags, and releases without a match
   assert.equal(selectRelease(releases, { currentVersion: '0.2.0', platform: 'darwin', arch: 'arm64' }), null)
 })
 
+test('release selection picks the checksum file for the target platform', () => {
+  const releases = [{
+    tag_name: 'v0.3.0', draft: false, assets: [
+      { name: 'CIQ-Developer-Terminal-0.3.0-mac-arm64.zip', browser_download_url: 'https://example/mac.zip' },
+      { name: 'SHA256SUMS-linux-x64.txt', browser_download_url: 'https://example/linux.txt' },
+      { name: 'SHA256SUMS-darwin-arm64.txt', browser_download_url: 'https://example/mac.txt' },
+      { name: 'SHA256SUMS-win32-x64.txt', browser_download_url: 'https://example/win.txt' },
+    ],
+  }]
+  const update = selectRelease(releases, { currentVersion: '0.2.0', platform: 'darwin', arch: 'arm64' })
+  assert.equal(update.checksums.name, 'SHA256SUMS-darwin-arm64.txt')
+  const combined = [{ tag_name: 'v0.3.0', draft: false, assets: [
+    { name: 'CIQ-Developer-Terminal-0.3.0-mac-arm64.zip', browser_download_url: 'https://example/mac.zip' },
+    { name: 'SHA256SUMS.txt', browser_download_url: 'https://example/all.txt' },
+  ] }]
+  assert.equal(selectRelease(combined, { currentVersion: '0.2.0', platform: 'darwin', arch: 'arm64' }).checksums.name, 'SHA256SUMS.txt')
+})
 test('checksum parsing only accepts exact asset matches', () => {
   const text = `${'a'.repeat(64)}  CIQ-Developer-Terminal-0.2.0-mac-arm64.zip\n${'b'.repeat(64)} *CIQ-Developer-Terminal-0.2.0-windows-x64-setup.exe\n`
   assert.equal(checksumFor(text, 'CIQ-Developer-Terminal-0.2.0-mac-arm64.zip'), 'a'.repeat(64))
