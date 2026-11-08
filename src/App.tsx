@@ -24,7 +24,13 @@ const modelKey = (model: Model) => `${model.providerID}/${model.id}`
 const findModel = (models: Model[], key: string) => models.find(model => modelKey(model) === key) || models.find(model => model.id === key)
 
 
-function niceError(error: unknown) { return String(error instanceof Error ? error.message : error).replace(/^Error invoking remote method '[^']+': Error: /, '') }
+function niceError(error: unknown) {
+  const message = String(error instanceof Error ? error.message : error).replace(/^Error invoking remote method '[^']+': Error: /, '')
+  if (/free usage limit|FreeUsageLimitError|spend_limit/i.test(message)) {
+    return 'OpenCode’s free-model limit was reached. Wait a few minutes, choose another free model, or connect a CollectivIQ Developer key for reliable access.'
+  }
+  return message
+}
 function relativeDate(time: number) {
   const days = Math.floor((Date.now() - time) / 86_400_000)
   return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : new Date(time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
@@ -120,7 +126,7 @@ export default function App() {
       if (event.type === 'session.execution.started') setBusy(b => ({ ...b, [event.data.sessionID]: true }))
       if (['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'session.idle'].includes(event.type)) setBusy(b => ({ ...b, [event.data.sessionID]: false }))
       if (event.type === 'session.status') setBusy(b => ({ ...b, [event.data.sessionID]: event.data.status?.type !== 'idle' }))
-      if (event.type === 'session.execution.failed' && event.data.sessionID === activeRef.current.sessionID) setError(event.data.error?.message || 'The model request failed.')
+      if (event.type === 'session.execution.failed' && event.data.sessionID === activeRef.current.sessionID) setError(niceError(event.data.error?.message || 'The model request failed.'))
       if (event.data.sessionID === activeRef.current.sessionID || ['server.connected', 'mcp.status.changed'].includes(event.type)) {
         if (!timer) timer = setTimeout(() => { timer = undefined; void refreshConversation().catch(e => setError(niceError(e))) }, 250)
       }
