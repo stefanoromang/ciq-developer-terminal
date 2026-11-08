@@ -25,6 +25,7 @@ try {
   assert.equal(result.engine.status, 'ready')
   assert.equal(result.engine.version, '2.2.6')
   assert.equal(result.rendererSandbox, true)
+  assert.equal(result.rendererReady, true)
   assert.ok(result.freeModels > 0)
   console.log(JSON.stringify({ ...result, packagedLaunchMs: Math.round(performance.now() - start) }, null, 2))
 } finally { await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }) }

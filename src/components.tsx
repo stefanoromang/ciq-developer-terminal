@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowSquareOut, Check, Copy, X } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import { bridge } from './bridge'
+import { errorMessage } from './errors'
 import type { AgentForm, Message } from './types'
 
 export function Mark({ className = '' }: { className?: string }) {
@@ -37,8 +38,8 @@ export function MessageView({ message }: { message: Message }) {
     </div>
     {content && <div className="markdown"><Markdown text={content} /></div>}
     {message.content?.filter(c => c.type === 'reasoning').map((c, i) => <details key={`reason-${i}`} className="tool-call"><summary>Reasoning</summary><div className="markdown"><Markdown text={c.text || ''} /></div></details>)}
-    {message.content?.filter(c => c.type === 'tool').map((c, i) => <details key={c.id || i} className="tool-call"><summary><span className={`status-dot ${c.state?.status === 'completed' ? 'good' : ''}`} /><code>{c.name}</code><span className="muted">{c.state?.status}</span></summary><pre>{JSON.stringify(c.state?.input, null, 2)}</pre>{c.state?.content?.map((part, j) => <pre key={j}>{part.text || `[${part.type}]`}</pre>)}{c.state?.error && <p className="error-text">{c.state.error}</p>}</details>)}
-    {message.error && <p className="error-text">{message.error.message || 'The model request failed.'}</p>}
+    {message.content?.filter(c => c.type === 'tool').map((c, i) => <details key={c.id || i} className="tool-call"><summary><span className={`status-dot ${c.state?.status === 'completed' ? 'good' : ''}`} /><code>{c.name}</code><span className="muted">{c.state?.status}</span></summary><pre>{JSON.stringify(c.state?.input, null, 2)}</pre>{c.state?.content?.map((part, j) => <pre key={j}>{part.text || `[${part.type}]`}</pre>)}{c.state?.error && <p className="error-text">{errorMessage(c.state.error, 'The tool request failed.')}</p>}</details>)}
+    {message.error && <p className="error-text">{errorMessage(message.error, 'The model request failed.')}</p>}
     </div>
   </article>
 }

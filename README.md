@@ -8,7 +8,7 @@ An independently designed, CollectivIQ-first desktop developer workspace with
 a left sidebar, project conversations, editable project memory, MCP controls,
 OpenCode's free coding models out of the box, and optional provider keys.
 
-**Version 0.3.1 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
+**Version 0.3.2 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
 · [Build and installation](#build) · [Original OpenCode source](https://github.com/anomalyco/opencode)
 
 ![CIQ Developer Terminal workspace with left-side navigation and CollectivIQ branding](docs/images/workspace.png)
@@ -40,13 +40,13 @@ Downloads are **unsigned**, and the macOS preview is **not notarized**.
 
 | Download | Format |
 |---|---|
-| [Windows x64 installer](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.1/CIQ-Developer-Terminal-0.3.1-windows-x64-setup.exe) | Per-user setup, no installer elevation |
-| [Windows x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.1/CIQ-Developer-Terminal-0.3.1-windows-x64-portable.exe) | Run without installing |
-| [Linux x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.1/CIQ-Developer-Terminal-0.3.1-linux-x64.tar.gz) | Extract and run as your user |
-| [macOS Apple Silicon](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.1/CIQ-Developer-Terminal-0.3.1-mac-arm64.zip) | Extract into `~/Applications` |
+| [Windows x64 installer](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.2/CIQ-Developer-Terminal-0.3.2-windows-x64-setup.exe) | Per-user setup, no installer elevation |
+| [Windows x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.2/CIQ-Developer-Terminal-0.3.2-windows-x64-portable.exe) | Run without installing |
+| [Linux x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.2/CIQ-Developer-Terminal-0.3.2-linux-x64.tar.gz) | Extract and run as your user |
+| [macOS Apple Silicon](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.2/CIQ-Developer-Terminal-0.3.2-mac-arm64.zip) | Extract into `~/Applications` |
 
 See [download instructions](docs/DOWNLOADS.md) and
-[0.3.1 release notes](docs/RELEASE-0.3.1.md).
+[0.3.2 release notes](docs/RELEASE-0.3.2.md).
 
 > **Updating from 0.1.2:** 0.1.2 has no updater. Install 0.3.0 once manually.
 > From 0.2.0 onward, CIQ checks its GitHub releases about twice a week and can

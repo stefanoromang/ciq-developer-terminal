@@ -33,11 +33,13 @@ jobs:
         run: |
           npx electron tests/desktop-smoke.cjs
           npx electron tests/main-smoke.cjs
+          npx electron tests/history-smoke.cjs
       - name: Sandboxed Linux desktop smoke tests
         if: runner.os == 'Linux'
         run: |
           dbus-run-session -- xvfb-run -a npx electron tests/desktop-smoke.cjs
           dbus-run-session -- xvfb-run -a npx electron tests/main-smoke.cjs
+          dbus-run-session -- xvfb-run -a npx electron tests/history-smoke.cjs
       - run: npx electron-builder --${{ matrix.package }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -48,11 +50,13 @@ jobs:
         run: |
           npx electron scripts/verify-package.cjs
           npx electron tests/main-smoke.cjs
+          npx electron tests/history-smoke.cjs
       - name: Verify sandboxed Linux package
         if: runner.os == 'Linux'
         run: |
           dbus-run-session -- xvfb-run -a npx electron scripts/verify-package.cjs
           dbus-run-session -- xvfb-run -a npx electron tests/main-smoke.cjs
+          dbus-run-session -- xvfb-run -a npx electron tests/history-smoke.cjs
       - name: Launch actual Linux package
         if: runner.os == 'Linux'
         run: dbus-run-session -- xvfb-run -a node scripts/smoke-launch.mjs release/linux-unpacked/ciq-developer-terminal

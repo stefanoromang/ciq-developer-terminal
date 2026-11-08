@@ -577,6 +577,18 @@ else {
     if (process.env.CIQ_TEST_USER_DATA && process.env.CIQ_SMOKE_REPORT) {
       await refreshModels()
       const report = await action('diagnostics')
+      // A healthy engine alone does not establish that React rendered a workspace.
+      // Fail packaged launch checks when the error boundary replaced the app.
+      report.rendererReady = await window.webContents.executeJavaScript(`new Promise(resolve => {
+        let attempts = 0
+        const check = () => {
+          if (document.querySelector('.recovery-screen')) return resolve(false)
+          if (document.querySelector('.app') && !document.querySelector('.loading-state')) return resolve(true)
+          if (++attempts >= 100) return resolve(false)
+          setTimeout(check, 50)
+        }
+        check()
+      })`)
       await fs.writeFile(process.env.CIQ_SMOKE_REPORT, JSON.stringify(report))
       app.quit(); return
     }

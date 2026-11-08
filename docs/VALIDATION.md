@@ -1,5 +1,21 @@
 # Validation — November 7, 2026
 
+## 0.3.2 saved-history crash regression
+
+- Reproduced React error #31 from a saved tool error with object keys `type` and
+  `message`, using a read-only SQLite snapshot of the affected workspace.
+- Before the fix, both the snapshot and a synthetic saved-history fixture
+  entered the recovery screen. After the fix, the snapshot rendered 27 messages
+  without a renderer error, and the fixture passed opening/reopening checks.
+- Structured errors and legacy strings are now explicitly supported in the
+  renderer's types and formatted as text. Unit checks include malformed errors
+  and confirm raw response bodies are not used as fallback messages.
+- Saved-history UI checks are included in source/packaged platform jobs and
+  Debian 12/13 jobs. No user database, prompt or API key is included in fixtures.
+
+The earlier stability workflow passed Windows, macOS, Ubuntu, Debian 12 and 13:
+[run 42431803521](https://github.com/stefanoromang/ciq-developer-terminal/actions/runs/42431803521).
+
 ## 0.3.1 stability work
 
 - 41 tests pass locally. New regression coverage: concurrent engine requests,

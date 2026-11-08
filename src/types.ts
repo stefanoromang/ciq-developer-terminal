@@ -15,8 +15,9 @@ export type Workspace = {
   cadence: 'daily' | 'weekly' | 'manual'; lastRefresh: number; toolsConfirmed: boolean; mcps: Mcp[]; newModels?: string[]
   gateway: string; freeProvider: string; freeEnabled: boolean; modelsAvailable: boolean; providers: ProviderConnection[]; updates: UpdateInfo; credentialStatus?: string; credentialError?: string
 }
-export type Content = { type: string; text?: string; name?: string; id?: string; state?: { status: string; input?: unknown; content?: { type: string; text?: string }[]; error?: string } }
-export type Message = { id: string; type: string; text?: string; metadata?: { ciqDisplayText?: string }; content?: Content[]; model?: { id: string }; error?: { message?: string }; time?: { created: number } }
+export type EngineError = string | { type?: string; message?: string; status?: number; response?: unknown }
+export type Content = { type: string; text?: string; name?: string; id?: string; state?: { status: string; input?: unknown; content?: { type: string; text?: string }[]; error?: EngineError } }
+export type Message = { id: string; type: string; text?: string; metadata?: { ciqDisplayText?: string }; content?: Content[]; model?: { id: string }; error?: EngineError; time?: { created: number } }
 export type Permission = { id: string; sessionID: string; action: string; resources: string[]; message?: string }
 export type Field = { key: string; type: string; title?: string; description?: string; required?: boolean; hidden?: boolean; options?: { label: string; value: string }[]; default?: string | boolean | string[] | number; when?: { key: string; op: 'eq' | 'neq'; value: unknown }[] }
 export type AgentForm = { id: string; title: string; sessionID: string; fields: Field[] }

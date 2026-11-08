@@ -10,11 +10,12 @@ import { AgentQuestion, Mark, MessageView, Modal } from './components'
 import { ImportDialog } from './ImportDialog'
 import { coalescedRefresh } from './refresh'
 import { Diagnostics } from './Diagnostics'
+import { errorMessage } from './errors'
 import type { AgentForm, McpStatus, Message, Model, Permission, ProviderOption, Workspace } from './types'
 
 type Page = 'chat' | 'connections' | 'memory' | 'models' | 'settings'
 const emptyUpdate = {
-  currentVersion: '0.3.1', lastCheck: 0, intervalDays: 3.5, skippedVersion: '', autoDownload: true,
+  currentVersion: '0.3.2', lastCheck: 0, intervalDays: 3.5, skippedVersion: '', autoDownload: true,
   downloading: false, progress: 0, ready: false, installing: false, error: '', downloaded: null, latest: null,
 }
 const empty: Workspace = {
@@ -28,7 +29,7 @@ const findModel = (models: Model[], key: string) => models.find(model => modelKe
 
 
 function niceError(error: unknown) {
-  const message = String(error instanceof Error ? error.message : error).replace(/^Error invoking remote method '[^']+': Error: /, '')
+  const message = errorMessage(error).replace(/^Error invoking remote method '[^']+': Error: /, '')
   if (/free usage limit|FreeUsageLimitError/i.test(message)) {
     return 'OpenCode’s free-model limit was reached. Try again later or connect another provider in Model library.'
   }
@@ -138,11 +139,11 @@ export default function App() {
       if (event.type === 'ciq.state') { setState(event.data as Workspace); return }
       if (event.type === 'ciq.update') { setState(value => ({ ...value, updates: event.data as Workspace['updates'] })); return }
       if (event.type === 'ciq.update.progress') { setState(value => ({ ...value, updates: { ...value.updates, downloading: true, progress: event.data.progress as number } })); return }
-      if (['ciq.engine.error', 'ciq.refresh.error'].includes(event.type)) { setError(event.data.message); if (event.type === 'ciq.engine.error') setBusy({}); return }
+      if (['ciq.engine.error', 'ciq.refresh.error'].includes(event.type)) { setError(niceError(event.data.message)); if (event.type === 'ciq.engine.error') setBusy({}); return }
       if (event.type === 'session.execution.started') setBusy(b => ({ ...b, [event.data.sessionID]: true }))
       if (['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'session.idle'].includes(event.type)) setBusy(b => ({ ...b, [event.data.sessionID]: false }))
       if (event.type === 'session.status') setBusy(b => ({ ...b, [event.data.sessionID]: event.data.status?.type !== 'idle' }))
-      if (event.type === 'session.execution.failed' && event.data.sessionID === activeRef.current.sessionID) setError(niceError(event.data.error?.message || 'The model request failed.'))
+      if (event.type === 'session.execution.failed' && event.data.sessionID === activeRef.current.sessionID) setError(niceError(event.data.error || 'The model request failed.'))
       if (event.data.sessionID === activeRef.current.sessionID || ['server.connected', 'mcp.status.changed'].includes(event.type)) {
         if (!timer) timer = setTimeout(() => { timer = undefined; void refreshConversation().catch(e => setError(niceError(e))) }, 250)
       }
