@@ -27,4 +27,4 @@ try {
   assert.equal(result.rendererSandbox, true)
   assert.ok(result.freeModels > 0)
   console.log(JSON.stringify({ ...result, packagedLaunchMs: Math.round(performance.now() - start) }, null, 2))
-} finally { await fs.rm(root, { recursive: true, force: true }) }
+} finally { await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }) }
