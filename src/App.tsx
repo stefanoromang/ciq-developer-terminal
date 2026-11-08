@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   ArrowDown, ArrowRight, ArrowUp, ArrowClockwise, ArrowSquareOut, Archive, Brain, CaretDown, CaretRight,
   ChatCircle, Check, CheckCircle, Circle, Code, Command, Cube, DownloadSimple, Folder, FolderOpen, FolderPlus,
@@ -8,11 +8,13 @@ import {
 import { bridge, isDesktop } from './bridge'
 import { AgentQuestion, Mark, MessageView, Modal } from './components'
 import { ImportDialog } from './ImportDialog'
+import { coalescedRefresh } from './refresh'
+import { Diagnostics } from './Diagnostics'
 import type { AgentForm, McpStatus, Message, Model, Permission, ProviderOption, Workspace } from './types'
 
 type Page = 'chat' | 'connections' | 'memory' | 'models' | 'settings'
 const emptyUpdate = {
-  currentVersion: '0.3.0', lastCheck: 0, intervalDays: 3.5, skippedVersion: '', autoDownload: true,
+  currentVersion: '0.3.1', lastCheck: 0, intervalDays: 3.5, skippedVersion: '', autoDownload: true,
   downloading: false, progress: 0, ready: false, installing: false, error: '', downloaded: null, latest: null,
 }
 const empty: Workspace = {
@@ -102,21 +104,25 @@ export default function App() {
     if (next?.projects) setState(next)
     return next
   }, [])
-  const refreshConversation = useCallback(async () => {
+  const refreshConversation = useMemo(() => coalescedRefresh(async () => {
     const selected = { ...activeRef.current }
     if (!selected.sessionID) return
-    const result = await bridge.invoke('session.messages', selected)
-    if (activeRef.current.sessionID !== selected.sessionID) return
-    setMessages([...(result.data || [])].reverse())
-    setBusy(value => ({ ...value, [selected.sessionID!]: result.active === true }))
-    setOlderCursor(result.cursor?.next || null)
-    const [perms, questions] = await Promise.all([
+    const [result, perms, questions] = await Promise.all([
+      bridge.invoke('session.messages', selected),
       bridge.invoke('permission.list', selected), bridge.invoke('form.list', selected),
     ])
     if (activeRef.current.sessionID !== selected.sessionID) return
+    setMessages(previous => {
+      const incoming: Message[] = [...(result.data || [])].reverse()
+      const ids = new Set(incoming.map(message => message.id))
+      return [...previous.filter(message => !ids.has(message.id) && (!incoming.length || (message.time?.created || 0) < (incoming[0].time?.created || 0))), ...incoming]
+    })
+    setBusy(value => ({ ...value, [selected.sessionID!]: result.active === true }))
+    setOlderCursor(result.cursor?.next || null)
+    if (activeRef.current.sessionID !== selected.sessionID) return
     setPermissions(perms.data || [])
     setForms(questions.data || [])
-  }, [])
+  }), [])
 
   useEffect(() => {
     void bridge.invoke('state').then(next => { setState(next); setReady(true); if (isDesktop && !next.connected && !next.freeEnabled && !next.modelsAvailable) setOnboarding(true) }).catch(e => { setError(niceError(e)); setReady(true) })
@@ -127,7 +133,7 @@ export default function App() {
       if (event.type === 'ciq.state') { setState(event.data as Workspace); return }
       if (event.type === 'ciq.update') { setState(value => ({ ...value, updates: event.data as Workspace['updates'] })); return }
       if (event.type === 'ciq.update.progress') { setState(value => ({ ...value, updates: { ...value.updates, downloading: true, progress: event.data.progress as number } })); return }
-      if (['ciq.engine.error', 'ciq.refresh.error'].includes(event.type)) { setError(event.data.message); return }
+      if (['ciq.engine.error', 'ciq.refresh.error'].includes(event.type)) { setError(event.data.message); if (event.type === 'ciq.engine.error') setBusy({}); return }
       if (event.type === 'session.execution.started') setBusy(b => ({ ...b, [event.data.sessionID]: true }))
       if (['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted', 'session.idle'].includes(event.type)) setBusy(b => ({ ...b, [event.data.sessionID]: false }))
       if (event.type === 'session.status') setBusy(b => ({ ...b, [event.data.sessionID]: event.data.status?.type !== 'idle' }))
@@ -151,10 +157,17 @@ export default function App() {
   }, [messages, permissions, forms])
   useEffect(() => {
     if (page !== 'connections' || !project || !isDesktop) return
-    const load = () => bridge.invoke('mcp.list', { projectID: project.id }).then(result => setMcpStatuses(result.data || [])).catch(e => setError(niceError(e)))
+    let disposed = false, loading = false
+    const load = async () => {
+      if (loading) return
+      loading = true
+      try { const result = await bridge.invoke('mcp.list', { projectID: project.id }); if (!disposed) setMcpStatuses(result.data || []) }
+      catch (e) { if (!disposed) setError(niceError(e)) }
+      finally { loading = false }
+    }
     void load()
     const timer = setInterval(() => { void load() }, 4000)
-    return () => clearInterval(timer)
+    return () => { disposed = true; clearInterval(timer) }
   }, [page, project?.id, state.mcps])
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -185,7 +198,7 @@ export default function App() {
         const result = await bridge.invoke('shell.output', { projectID: terminalRun.projectID, shellID: terminalRun.id, cursor })
         cursor = result.data.cursor
         if (!disposed && result.data.output) setTerminalOutput(value => (value + result.data.output).slice(-200_000))
-        if (result.status && result.status !== 'running') setTerminalRun(null)
+        if (!disposed && result.status && result.status !== 'running') setTerminalRun(null)
       } catch (e) { if (!disposed) { setError(niceError(e)); setTerminalRun(null) } }
       finally { loading = false }
     }
@@ -314,6 +327,7 @@ export default function App() {
           <section className="settings-section"><h2>Model tools</h2><div className="settings-card"><label className="setting-row toggle-setting"><div className="setting-icon"><Code size={21} /></div><div><strong>Enable tools for models with unknown capability</strong><p>Only enable if your gateway supports OpenAI tool calls. Unsupported models may reject requests; declared chat-only models remain chat-only.</p></div><input type="checkbox" checked={state.toolsConfirmed} onChange={event => void run(() => callState('settings.save', { toolsConfirmed: event.target.checked }))} /></label></div></section>
           <section className="settings-section"><h2>Privacy by design</h2><div className="settings-card privacy-grid"><div><ShieldCheck size={23} /><strong>Local workspace</strong><p>Notes and conversation history stay on this computer. Prompts and required context go to your selected gateway model.</p></div><div><Key size={23} /><strong>{state.secureStorage ? 'OS-protected credentials' : 'Session-only available'}</strong><p>{state.secureStorage ? 'Saved keys are encrypted using Electron safeStorage backed by the operating system.' : 'Secure OS storage is unavailable. Use a session-only key; no plaintext fallback.'}</p></div></div></section>
           <section className="settings-section"><h2>Keyboard shortcuts</h2><div className="settings-card keyboard-list"><div><span>Search projects and conversations</span><kbd>⌘ / Ctrl K</kbd></div><div><span>Open project folder</span><kbd>⌘ / Ctrl Shift O</kbd></div><div><span>Toggle sidebar</span><kbd>⌘ / Ctrl \</kbd></div><div><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div><span>Send prompt</span><kbd>Enter</kbd></div></div></section><div className="about-ciq"><Mark /><div><strong>CIQ Developer Terminal <span className="tag">{state.updates.currentVersion} PREVIEW</span></strong><p className="creator-credit">Created by Stefano Roman Gunness.</p><p>An independently designed CIQ interface, powered by the MIT-licensed OpenCode engine. Free models come from OpenCode; CollectivIQ and other providers are optional. Not an official OpenCode or CollectivIQ distribution.</p><div className="attribution-links"><button onClick={() => void bridge.invoke('external.open', { url: 'https://github.com/stefanoromang/ciq-developer-terminal' })}>Project source<ArrowSquareOut size={12} /></button><button onClick={() => void bridge.invoke('external.open', { url: 'https://github.com/anomalyco/opencode' })}>Read the original OpenCode source<ArrowSquareOut size={12} /></button><button onClick={() => void bridge.invoke('external.open', { url: 'https://opencode.ai/v2/docs/' })}>OpenCode documentation<ArrowSquareOut size={12} /></button></div></div></div></>}
+          {page === 'settings' && <Diagnostics />}
       </div></div>}
       {terminal && <section className="terminal-panel" aria-label="Command terminal"><div className="terminal-heading"><span><TerminalWindow size={15} />COMMAND TERMINAL<span className="terminal-directory">{project?.name || 'No project'}</span></span><div>{terminalRun && <button className="icon-button" aria-label="Stop command" onClick={() => void run(async () => { await bridge.invoke('shell.stop', { projectID: terminalRun.projectID, shellID: terminalRun.id }); setTerminalRun(null) })}><Square size={13} /></button>}<button className="icon-button" aria-label="Clear terminal output" onClick={() => setTerminalOutput('')}><Trash size={14} /></button><button className="icon-button" aria-label="Close terminal" onClick={() => setTerminal(false)}><X size={15} /></button></div></div><pre className="terminal-output">{terminalOutput || 'Commands you run here execute locally in the selected project. Interactive programs are not supported in this preview.'}</pre><form onSubmit={event => { event.preventDefault(); if (!project || terminalRun) return; void run(async () => { setTerminalOutput(value => value + `\n❯ ${terminalCommand}\n`); const result = await bridge.invoke('shell.run', { projectID: project.id, command: terminalCommand }); setTerminalRun({ id: result.data.id, projectID: project.id }); setTerminalCommand('') }) }}><span>❯</span><input aria-label="Local shell command" placeholder={project ? 'Enter a command and press Return to run…' : 'Open a project to run commands'} disabled={!project || Boolean(terminalRun)} value={terminalCommand} onChange={event => setTerminalCommand(event.target.value)} /><button aria-label="Run shell command" disabled={!project || !terminalCommand.trim() || Boolean(terminalRun)}><ArrowRight size={16} /></button></form></section>}
       <footer className="statusbar"><span><span className={`status-dot ${canChat ? 'good' : ''}`} />{canChat ? (state.connected ? 'CollectivIQ connected' : `${freeCount} free models · ${state.models.length} total`) : 'Choose a model provider to get started'}</span><div>{project && <span><Folder size={12} />{project.name}</span>}<span><ShieldCheck size={12} />Local workspace</span><span className="status-ciq">CIQ</span></div></footer>

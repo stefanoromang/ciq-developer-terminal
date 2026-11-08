@@ -11,6 +11,7 @@ const commands = new Set([
   'mcp.list', 'mcp.add', 'mcp.toggle', 'mcp.remove', 'mcp.auth', 'mcp.authStatus', 'mcp.authComplete',
   'permission.list', 'permission.reply', 'form.list', 'form.reply', 'form.cancel',
   'external.open', 'engine.info',
+  'engine.restart', 'diagnostics',
   'shell.run', 'shell.output', 'shell.stop', 'session.agent',
 ])
 contextBridge.exposeInMainWorld('ciq', {

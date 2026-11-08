@@ -7,6 +7,7 @@ const {
 } = require('./core.cjs')
 const { Engine } = require('./engine.cjs')
 const { discoverInWorker } = require('./imports.cjs')
+const { singleFlight } = require('./tasks.cjs')
 const {
   CHECK_INTERVAL, isUpdateCheckDue, checkForUpdate, downloadUpdate, installUpdate, macBundlePath, verifyDownloaded,
 } = require('./updates.cjs')
@@ -17,6 +18,7 @@ const userDirectory = process.env.CIQ_TEST_USER_DATA || path.join(app.getPath('a
 app.setPath('userData', userDirectory)
 let store, engine, window, quitting = false, refreshTimer, refreshInFlight
 let updateTimer, updateCheckInFlight, updateDownload
+let updateLaunchTimer, shuttingDown = false
 let importCandidates = new Map(), importScan
 let updateRuntime = { downloading: false, progress: 0, ready: false, installing: false, error: '', downloaded: null }
 
@@ -52,6 +54,14 @@ function allowedProviders() {
 function currentSession(project, sessionID) {
   return project.sessions.find(session => session.id === (sessionID || project.activeSessionID))
 }
+async function requireModelCredential(model) {
+  if (model.providerID === FREE_PROVIDER && model.free) return
+  if (model.providerID === 'collectiviq') {
+    if (!await store.getKey()) throw new Error('Reconnect your CollectivIQ key or choose a free model.')
+  } else if (!await store.getProviderKey(model.providerID)) {
+    throw new Error(`Reconnect ${model.provider} in Model library or choose a free model.`)
+  }
+}
 async function emitState() {
   syncUpdateRuntime()
   broadcast({ type: 'ciq.state', data: await store.publicState() })
@@ -72,7 +82,10 @@ async function emitUpdateState() {
 async function refreshModels() {
   if (refreshInFlight) return refreshInFlight
   refreshInFlight = (async () => {
-    const key = await store.getKey()
+    const key = await store.getKey().catch(() => null)
+    // Independent catalogs start together so a slow gateway cannot delay free
+    // models. Preserve each provider's previous catalog independently on failure.
+    const engineCatalog = engine.request('GET', '/api/model').then(payload => ({ payload }), error => ({ error }))
     let gatewayModels = []
     let gatewayError = ''
     if (key) {
@@ -88,7 +101,9 @@ async function refreshModels() {
     let engineError = ''
     if (store.state.freeEnabled || store.state.providers.length) {
       try {
-        const payload = await engine.request('GET', '/api/model')
+        const result = await engineCatalog
+        if (result.error) throw result.error
+        const payload = result.payload
         engineModels = normalizeEngineModels(payload, providerNames(), allowedProviders())
       } catch (error) {
         engineError = error.message
@@ -96,6 +111,7 @@ async function refreshModels() {
       }
     }
     const models = mergeModels(gatewayModels, engineModels)
+    if (shuttingDown) return store.publicState()
     if (!models.length) {
       throw new Error(gatewayError || engineError || 'No models are available. Enable free models or connect a provider.')
     }
@@ -141,10 +157,9 @@ async function checkForUpdates({ manual = false } = {}) {
   return updateCheckInFlight
 }
 
-async function downloadUpdateFor(latest) {
+const downloadUpdateFor = singleFlight(async latest => {
   if (!latest) throw new Error('No update is available.')
   if (updateRuntime.downloaded?.version === latest.version) return updateRuntime.downloaded
-  if (updateDownload?.version === latest.version) return updateDownload.promise
   const extension = latest.install === 'zip' ? '.zip' : latest.install === 'tarball' ? '.tar.gz' : '.exe'
   const directory = await fs.mkdtemp(path.join(app.getPath('temp'), 'ciq-download-'))
   const file = path.join(directory, `update${extension}`)
@@ -175,7 +190,7 @@ async function downloadUpdateFor(latest) {
   })().finally(() => { updateDownload = null })
   updateDownload = { version: latest.version, promise }
   return promise
-}
+})
 
 async function installPendingUpdate() {
   const latest = store.state.updates.latest
@@ -204,6 +219,24 @@ async function action(command, p = {}) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('Invalid action payload.')
   if (command === 'state') return store.publicState()
   if (command === 'engine.info') return engine.request('GET', '/api/info')
+  if (command === 'engine.restart') {
+    await engine.stop()
+    await engine.ensure()
+    await refreshModels()
+    return store.publicState()
+  }
+  if (command === 'diagnostics') {
+    const started = performance.now()
+    let info, error = ''
+    try { info = await engine.request('GET', '/api/info') } catch (failure) { error = failure.message }
+    return {
+      version: app.getVersion(), platform: process.platform, arch: process.arch,
+      engine: { status: engine.status, version: info?.version || '', responseMs: Math.round(performance.now() - started), error },
+      runtime: { electron: process.versions.electron, node: process.versions.node },
+      models: store.state.models.length, freeModels: store.state.models.filter(model => model.free).length,
+      secureStorage: store.canEncrypt(), rendererSandbox: window?.webContents.getLastWebPreferences().sandbox === true,
+    }
+  }
   if (command === 'external.open') {
     const url = new URL(text(p.url, 8192))
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Only web links can be opened.')
@@ -372,7 +405,7 @@ async function action(command, p = {}) {
   if (command === 'session.create') {
     const selected = findModel(store.state.models, p.model || store.state.selectedModel)
     if (!selected) throw new Error('Choose an available model first.')
-    if (selected.providerID === 'collectiviq' && !await store.getKey()) throw new Error('Connect your CollectivIQ Developer API key first.')
+    await requireModelCredential(selected)
     const response = await engine.request('POST', '/api/session', {
       title: 'New conversation',
       model: { providerID: selected.providerID, id: selected.id },
@@ -433,7 +466,8 @@ async function action(command, p = {}) {
   if (command === 'session.prompt') {
     const saved = currentSession(project, p.sessionID)
     const selected = findModel(store.state.models, saved?.model || store.state.selectedModel)
-    if (selected?.providerID === 'collectiviq' && !await store.getKey()) throw new Error('Connect your CollectivIQ Developer API key first.')
+    if (!selected) throw new Error('Choose an available model in Model library before sending.')
+    await requireModelCredential(selected)
     const message = text(p.text).trim()
     if (!message) throw new Error('Write a prompt first.')
     const result = await engine.request('POST', `${route}/prompt`, { text: memoryPrompt(project, message), metadata: { ciqDisplayText: message } })
@@ -451,7 +485,7 @@ async function action(command, p = {}) {
   if (command === 'session.model') {
     const selected = findModel(store.state.models, p.model)
     if (!selected) throw new Error('That model is no longer available. Refresh and choose another.')
-    if (selected.providerID === 'collectiviq' && !await store.getKey()) throw new Error('Connect your CollectivIQ Developer API key first.')
+    await requireModelCredential(selected)
     await engine.request('POST', `${route}/model`, { model: { providerID: selected.providerID, id: selected.id } })
     const saved = currentSession(project, p.sessionID)
     if (saved) saved.model = modelKey(selected)
@@ -484,12 +518,18 @@ async function action(command, p = {}) {
 async function createWindow() {
   window = new BrowserWindow({
     title: 'CIQ Developer Terminal', width: 1380, height: 920, minWidth: 760, minHeight: 600,
-    backgroundColor: '#0b0e15', titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 20, y: 20 },
+    backgroundColor: '#0b0e15',
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 20, y: 20 } } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
     icon: path.join(__dirname, '..', 'assets', 'icon.png'), show: false,
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('render-process-gone', async (_event, details) => {
+    if (shuttingDown || details.reason === 'clean-exit') return
+    const choice = await dialog.showMessageBox(window, { type: 'error', buttons: ['Reload workspace', 'Quit'], defaultId: 0, message: 'The workspace display stopped.', detail: 'Saved projects and conversations are intact. Reload the display to reconnect.' })
+    if (choice.response === 0) window.webContents.reload()
+    else app.quit()
+  })
   window.webContents.on('will-navigate', (event, target) => {
     if (target !== window.webContents.getURL()) event.preventDefault()
   })
@@ -511,6 +551,7 @@ else {
     engine = new Engine(store, broadcast)
     syncUpdateRuntime()
     ipcMain.handle('ciq:action', async (event, command, payload) => {
+      if (shuttingDown) throw new Error('CIQ is shutting down.')
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Unauthorized sender.')
       return action(command, payload)
     })
@@ -521,8 +562,15 @@ else {
       { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] },
     ]))
     await createWindow()
+    if (process.env.CIQ_TEST_USER_DATA && process.env.CIQ_SMOKE_REPORT) {
+      await refreshModels()
+      const report = await action('diagnostics')
+      await fs.writeFile(process.env.CIQ_SMOKE_REPORT, JSON.stringify(report))
+      app.quit(); return
+    }
     const catchUp = async () => {
-      const key = await store.getKey()
+      if (shuttingDown) return
+      const key = await store.getKey().catch(() => null)
       const hasFree = store.state.models.some(model => model.providerID === FREE_PROVIDER)
       const needsFree = store.state.freeEnabled && !hasFree
       const needsModels = !store.state.models.length
@@ -531,17 +579,18 @@ else {
         await refreshModels().catch(error => broadcast({ type: 'ciq.refresh.error', data: { message: error.message } }))
       }
     }
-    await catchUp()
-    refreshTimer = setInterval(() => { void catchUp() }, 60_000)
-    setTimeout(() => { void checkForUpdates() }, 6000)
-    updateTimer = setInterval(() => { void checkForUpdates() }, 6 * 60 * 60 * 1000)
+    const backgroundError = error => broadcast({ type: 'ciq.refresh.error', data: { message: error.message } })
+    void catchUp().catch(backgroundError)
+    refreshTimer = setInterval(() => { void catchUp().catch(backgroundError) }, 60_000)
+    updateLaunchTimer = setTimeout(() => { void checkForUpdates().catch(backgroundError) }, 6000)
+    updateTimer = setInterval(() => { void checkForUpdates().catch(backgroundError) }, 6 * 60 * 60 * 1000)
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
   }).catch(error => { dialog.showErrorBox('CIQ could not start', error.message); app.quit() })
   app.on('window-all-closed', () => { app.quit() })
   app.on('before-quit', event => {
     if (quitting) return
-    event.preventDefault(); quitting = true
-    clearInterval(refreshTimer); clearInterval(updateTimer)
-    Promise.resolve(engine?.stop()).finally(() => app.quit())
+    event.preventDefault(); quitting = true; shuttingDown = true
+    clearInterval(refreshTimer); clearInterval(updateTimer); clearTimeout(updateLaunchTimer)
+    Promise.allSettled([engine?.stop(), store?.queue, store?.vaultQueue]).finally(() => app.quit())
   })
 }

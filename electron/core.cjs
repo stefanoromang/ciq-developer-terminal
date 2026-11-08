@@ -205,7 +205,14 @@ class Store {
     }
   }
   async load() {
-    try { this.state = { ...this.state, ...JSON.parse(await fs.readFile(this.file, 'utf8')) } }
+    try {
+      const loaded = JSON.parse(await fs.readFile(this.file, 'utf8'))
+      if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded) ||
+        ['projects', 'models', 'mcps', 'providers'].some(key => loaded[key] !== undefined && !Array.isArray(loaded[key])) ||
+        loaded.projects?.some(project => !project || typeof project.id !== 'string' || typeof project.directory !== 'string' || !Array.isArray(project.sessions)) ||
+        loaded.models?.some(model => !model || typeof model.id !== 'string')) throw new Error('Invalid workspace shape')
+      this.state = { ...this.state, ...loaded }
+    }
     catch (error) { if (error.code !== 'ENOENT') throw new Error('Workspace settings could not be read. The existing file has not been overwritten.') }
     migrateState(this.state)
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 })
@@ -242,8 +249,8 @@ class Store {
     this.key = key
   }
   async clearKey() {
-    this.key = null
     await fs.unlink(this.vault).catch(error => { if (error.code !== 'ENOENT') throw error })
+    this.key = null
   }
   async loadProviderKeys() {
     if (this.providerKeysLoaded) return
@@ -289,10 +296,10 @@ class Store {
     return this.setProviderKey(providerID, null, false)
   }
   async providerEnv() {
-    await this.loadProviderKeys()
+    await this.loadProviderKeys().catch(() => {})
     const env = {}
     for (const provider of this.state.providers) {
-      const key = await this.getProviderKey(provider.id)
+      const key = await this.getProviderKey(provider.id).catch(() => null)
       if (!key) continue
       for (const name of provider.env) env[name] = key
     }
@@ -340,10 +347,12 @@ class Store {
       } catch { /* keep free mode and other keys accessible */ }
       providers.push({ ...provider, connected, credentialStatus })
     }
+    let connected = false, credentialError = ''
+    try { connected = Boolean(await this.getKey()) } catch (error) { credentialError = error.message }
     return {
       ...this.state,
-      connected: Boolean(await this.getKey()),
-      credentialStatus: await fs.access(this.vault).then(() => 'saved', () => this.key ? 'session' : 'missing'),
+      connected, credentialError,
+      credentialStatus: credentialError ? 'unavailable' : await fs.access(this.vault).then(() => this.canEncrypt() ? 'saved' : 'locked', () => this.key ? 'session' : 'missing'),
       providers,
       secureStorage: this.canEncrypt(),
       gateway: GATEWAY,

@@ -1,0 +1,8 @@
+node_modules
+dist
+.git
+test-results
+release/*unpacked
+release/mac*
+release/*.exe
+release/*.zip

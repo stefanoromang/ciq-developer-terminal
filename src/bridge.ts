@@ -7,7 +7,7 @@ const preview: Workspace = {
   cadence: 'daily', lastRefresh: 0, toolsConfirmed: false, mcps: [], gateway: 'https://api.prod.collectiviq.ai/v1',
   freeProvider: 'opencode', freeEnabled: false, modelsAvailable: false, providers: [],
   updates: {
-    currentVersion: '0.3.0', lastCheck: 0, intervalDays: 3.5, skippedVersion: '', autoDownload: true,
+    currentVersion: '0.3.1', lastCheck: 0, intervalDays: 3.5, skippedVersion: '', autoDownload: true,
     downloading: false, progress: 0, ready: false, installing: false, error: '', downloaded: null, latest: null,
   },
 }

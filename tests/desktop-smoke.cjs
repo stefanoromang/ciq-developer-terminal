@@ -3,9 +3,11 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const assert = require('node:assert/strict')
 let window
+// Xvfb has no physical GPU. Keep the sandbox enabled with software rendering.
+if (process.platform === 'linux') app.disableHardwareAcceleration()
 app.whenReady().then(async () => {
   await fs.mkdir(path.join(__dirname, '..', 'test-results'), { recursive: true })
-  window = new BrowserWindow({ show: false, width: 1440, height: 960, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } })
+  window = new BrowserWindow({ show: true, width: 1440, height: 960, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } })
   const errors = []
   window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message) })
   await window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))

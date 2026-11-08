@@ -65,6 +65,9 @@ test('corrupt workspace settings are preserved, never reset', async () => {
   await fs.writeFile(path.join(root, 'workspace.json'), '{broken')
   await assert.rejects(new Store(root, encryption).load(), /not been overwritten/)
   assert.equal(await fs.readFile(path.join(root, 'workspace.json'), 'utf8'), '{broken')
+  await fs.writeFile(path.join(root, 'workspace.json'), '{"projects":null}')
+  await assert.rejects(new Store(root, encryption).load(), /not been overwritten/)
+  assert.equal(await fs.readFile(path.join(root, 'workspace.json'), 'utf8'), '{"projects":null}')
 })
 test('projects use canonical paths, keep independent notes, and reopen cleanly', async () => {
   const root = await temporary(), a = await temporary(), b = await temporary()

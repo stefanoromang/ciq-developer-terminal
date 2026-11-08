@@ -20,8 +20,8 @@ jobs:
             package: win
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -36,8 +36,8 @@ jobs:
       - name: Sandboxed Linux desktop smoke tests
         if: runner.os == 'Linux'
         run: |
-          xvfb-run -a npx electron tests/desktop-smoke.cjs
-          xvfb-run -a npx electron tests/main-smoke.cjs
+          dbus-run-session -- xvfb-run -a npx electron tests/desktop-smoke.cjs
+          dbus-run-session -- xvfb-run -a npx electron tests/main-smoke.cjs
       - run: npx electron-builder --${{ matrix.package }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -51,8 +51,17 @@ jobs:
       - name: Verify sandboxed Linux package
         if: runner.os == 'Linux'
         run: |
-          xvfb-run -a npx electron scripts/verify-package.cjs
-          xvfb-run -a npx electron tests/main-smoke.cjs
+          dbus-run-session -- xvfb-run -a npx electron scripts/verify-package.cjs
+          dbus-run-session -- xvfb-run -a npx electron tests/main-smoke.cjs
+      - name: Launch actual Linux package
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a node scripts/smoke-launch.mjs release/linux-unpacked/ciq-developer-terminal
+      - name: Launch actual macOS package
+        if: runner.os == 'macOS'
+        run: node scripts/smoke-launch.mjs "release/mac-arm64/CIQ Developer Terminal.app/Contents/MacOS/CIQ Developer Terminal"
+      - name: Launch actual Windows package
+        if: runner.os == 'Windows'
+        run: node scripts/smoke-launch.mjs "release/win-unpacked/CIQ Developer Terminal.exe"
       - name: Verify Windows per-user installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -86,8 +95,28 @@ jobs:
           name: smoke-screenshots-${{ runner.os }}-${{ runner.arch }}
           path: test-results/*.png
           if-no-files-found: ignore
-  publish:
+  debian:
     needs: package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['12', '13']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: ciq-developer-terminal-Linux-X64
+          path: release
+      - name: Build Debian desktop validation image
+        run: docker build --build-arg DEBIAN_VERSION=${{ matrix.version }} -f tests/debian/Dockerfile -t ciq-debian-test .
+      - name: Run non-root Debian desktop and packaged-launch checks
+        # The outer Docker profile must allow nested namespaces. Chromium's
+        # renderer sandbox stays enabled and is asserted by the smoke test.
+        run: docker run --rm --security-opt seccomp=unconfined --security-opt apparmor=unconfined ciq-debian-test
+  publish:
+    needs: [package, debian]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
