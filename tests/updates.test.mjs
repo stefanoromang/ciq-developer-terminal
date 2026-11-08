@@ -8,7 +8,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const {
   CHECK_INTERVAL, parseVersion, compareVersions, isUpdateCheckDue, assetCandidates,
-  selectRelease, checkForUpdate, checksumFor, downloadUpdate, installUpdate, macBundlePath,
+  selectRelease, checkForUpdate, checksumFor, downloadUpdate, installUpdate, macBundlePath, verifyDownloaded,
 } = require('../electron/updates.cjs')
 
 test('semantic versions compare including prereleases', () => {
@@ -38,6 +38,7 @@ test('asset names follow the published platform conventions', () => {
   assert.equal(assetCandidates('0.2.0', 'win32', 'x64')[0].name, 'CIQ-Developer-Terminal-0.2.0-windows-x64-setup.exe')
   assert.equal(assetCandidates('0.2.0', 'linux', 'x64')[0].name, 'CIQ-Developer-Terminal-0.2.0-linux-x64.tar.gz')
   assert.deepEqual(assetCandidates('0.2.0', 'freebsd', 'x64'), [])
+  assert.equal(assetCandidates('0.3.0', 'win32', 'x64', true)[0].install, 'portable')
 })
 
 test('release selection ignores drafts, older tags, and releases without a matching asset', () => {
@@ -100,6 +101,9 @@ test('update downloads verify SHA-256 and delete mismatches', async () => {
   assert.equal(result.sha256, digest)
   assert.equal((await fs.readFile(result.file)).toString(), 'fixture update payload')
   assert.equal(progress.at(-1), body.length)
+  await verifyDownloaded(result.file, digest)
+  await fs.appendFile(result.file, 'changed')
+  await assert.rejects(verifyDownloaded(result.file, digest), /changed after download/)
 
   const bad = { ...update, checksums: { ...update.checksums } }
   const badFetch = async url => String(url).includes('SHA256SUMS')
@@ -107,6 +111,45 @@ test('update downloads verify SHA-256 and delete mismatches', async () => {
     : { ok: true, headers: new Map([['content-length', String(body.length)]]), body: new Response(body).body }
   await assert.rejects(downloadUpdate(bad, path.join(root, 'bad.zip'), { fetchImpl: badFetch }), /checksum/)
   await assert.rejects(fs.stat(path.join(root, 'bad.zip')), { code: 'ENOENT' })
+})
+
+test('GitHub checksum redirects are followed before validating the payload', async t => {
+  const { createServer } = await import('node:http')
+  const body = 'fixture redirect download'
+  const digest = createHash('sha256').update(body).digest('hex')
+  const server = createServer((req, res) => {
+    if (req.url === '/checksums') res.writeHead(302, { Location: '/asset-checksums' }).end()
+    else res.end(req.url === '/asset-checksums' ? `${digest}  app.zip\n` : body)
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ciq-redirect-test-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const result = await downloadUpdate({ asset: { name: 'app.zip', url: `${base}/app.zip` }, checksums: { url: `${base}/checksums` } }, path.join(root, 'app.zip'))
+  assert.equal(result.sha256, digest)
+})
+
+test('directory updater stages a complete replacement and preserves the previous app', { skip: process.platform === 'win32' }, async t => {
+  const { execFile: exec } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execFile = promisify(exec)
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ciq-replace-test-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const target = path.join(root, 'installed'), source = path.join(root, 'new')
+  await fs.mkdir(target); await fs.mkdir(source)
+  await fs.writeFile(path.join(target, 'app'), 'old')
+  await fs.writeFile(path.join(source, 'app'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  await fs.writeFile(path.join(source, 'version'), 'new')
+  const archive = path.join(root, 'update.tar.gz')
+  await execFile('/usr/bin/tar', ['-czf', archive, '-C', source, '.'])
+  let helper
+  await installUpdate({ platform: 'linux', file: archive, update: { install: 'tarball' }, targetPath: target, execPath: path.join(target, 'app'), pid: 99999999, tempRoot: root,
+    spawnImpl: (file, args, options) => { helper = { file, args, options }; return { unref() {} } } })
+  assert.equal(await fs.readFile(path.join(target, 'app'), 'utf8'), 'old')
+  await execFile(helper.file, helper.args, { env: helper.options.env })
+  assert.equal(await fs.readFile(path.join(target, 'version'), 'utf8'), 'new')
+  assert.equal(await fs.readFile(path.join(helper.options.env.BACKUP, 'app'), 'utf8'), 'old')
 })
 
 test('update downloads require a checksum file', async () => {
@@ -127,7 +170,7 @@ test('install helpers launch detached and never request elevation', async () => 
     targetPath: 'C:\\Users\\me\\AppData\\Local\\CIQ', pid: 4321, spawnImpl,
   })
   assert.equal(result.mode, 'installer')
-  assert.deepEqual(calls[0].args, ['/S', '/D=C:\\Users\\me\\AppData\\Local\\CIQ'])
+  assert.deepEqual(calls[0].args, ['/S', '/currentuser', '/D=C:\\Users\\me\\AppData\\Local\\CIQ'])
   assert.equal(calls[0].options.detached, true)
   assert.equal(calls[0].options.windowsHide, true)
 })

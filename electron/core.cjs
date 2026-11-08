@@ -70,7 +70,7 @@ function normalizeEngineModels(payload, providerNames = {}, allowed = [FREE_PROV
       name: typeof item.name === 'string' && item.name.trim() ? item.name.slice(0, 180) : item.modelID,
       tools: typeof item.capabilities?.tools === 'boolean' ? item.capabilities.tools : null,
       context: Number.isFinite(item.limit?.context) && item.limit.context > 0 ? item.limit.context : null,
-      free: cost.length > 0 && cost.every(entry => Number(entry?.input) === 0 && Number(entry?.output) === 0),
+      free: cost.length > 0 && cost.every(entry => entry?.input === 0 && entry?.output === 0),
     })
   }
   return models.sort((a, b) => a.name.localeCompare(b.name))
@@ -192,8 +192,9 @@ class Store {
     this.vault = path.join(directory, 'gateway-key.bin')
     this.providerVault = path.join(directory, 'provider-keys.bin')
     this.key = null
-    this.providerKeys = {}
-    this.savedProviderKeys = {}
+    this.providerKeys = Object.create(null)
+    this.savedProviderKeys = Object.create(null)
+    this.vaultQueue = Promise.resolve()
     this.providerKeysLoaded = false
     this.queue = Promise.resolve()
     this.runtime = { version: '', update: {} }
@@ -246,44 +247,46 @@ class Store {
   }
   async loadProviderKeys() {
     if (this.providerKeysLoaded) return
-    this.providerKeysLoaded = true
     try {
       if (!this.canEncrypt()) return
       const parsed = JSON.parse(this.secureStorage.decryptString(await fs.readFile(this.providerVault)))
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) this.savedProviderKeys = parsed
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.values(parsed).some(value => typeof value !== 'string')) throw new Error('Invalid vault')
+      this.savedProviderKeys = Object.assign(Object.create(null), parsed)
+      this.providerKeysLoaded = true
     } catch (error) {
-      if (error.code === 'ENOENT') return
+      if (error.code === 'ENOENT') { this.providerKeysLoaded = true; return }
       throw new Error('Saved provider keys could not be unlocked. Reconnect those providers; the saved vault has not been overwritten.')
     }
   }
-  async persistProviderKeys() {
+  async persistProviderKeys(keys) {
     if (!this.canEncrypt()) throw new Error('Secure OS credential storage is unavailable. Connect this provider for this session only.')
-    const temp = `${this.providerVault}.tmp`
-    await fs.writeFile(temp, this.secureStorage.encryptString(JSON.stringify(this.savedProviderKeys)), { mode: 0o600 })
-    await fs.rename(temp, this.providerVault)
+    const temp = `${this.providerVault}.${randomUUID()}.tmp`
+    try {
+      await fs.writeFile(temp, this.secureStorage.encryptString(JSON.stringify(keys)), { mode: 0o600 })
+      await fs.rename(temp, this.providerVault)
+    } finally { await fs.unlink(temp).catch(() => {}) }
   }
   async getProviderKey(providerID) {
     await this.loadProviderKeys()
     return this.providerKeys[providerID] || this.savedProviderKeys[providerID] || null
   }
-  async setProviderKey(providerID, key, remember) {
-    await this.loadProviderKeys()
-    if (remember) {
-      if (!this.canEncrypt()) throw new Error('Secure OS credential storage is unavailable. Connect this provider for this session only.')
-      this.savedProviderKeys[providerID] = key
-      await this.persistProviderKeys()
-      delete this.providerKeys[providerID]
-    } else {
-      this.providerKeys[providerID] = key
-      delete this.savedProviderKeys[providerID]
-      if (this.canEncrypt()) await this.persistProviderKeys()
-    }
+  setProviderKey(providerID, key, remember) {
+    const task = this.vaultQueue.then(async () => {
+      await this.loadProviderKeys()
+      const next = Object.assign(Object.create(null), this.savedProviderKeys)
+      if (remember) next[providerID] = key
+      else delete next[providerID]
+      if (remember || this.canEncrypt()) await this.persistProviderKeys(next)
+      else if (await fs.access(this.providerVault).then(() => true, () => false)) throw new Error('Unlock secure storage before changing a saved provider key.')
+      this.savedProviderKeys = next
+      if (remember || !key) delete this.providerKeys[providerID]
+      else this.providerKeys[providerID] = key
+    })
+    this.vaultQueue = task.catch(() => {})
+    return task
   }
   async clearProviderKey(providerID) {
-    await this.loadProviderKeys()
-    delete this.providerKeys[providerID]
-    delete this.savedProviderKeys[providerID]
-    if (this.canEncrypt()) await this.persistProviderKeys()
+    return this.setProviderKey(providerID, null, false)
   }
   async providerEnv() {
     await this.loadProviderKeys()
@@ -295,7 +298,7 @@ class Store {
     }
     return env
   }
-  async addProject(directory) {
+  async addProject(directory, { save = true, sources = [] } = {}) {
     const canonical = await fs.realpath(directory)
     if (!(await fs.stat(canonical)).isDirectory()) throw new Error('Choose a project folder.')
     let project = this.state.projects.find(p => p.directory === canonical)
@@ -305,8 +308,22 @@ class Store {
     }
     this.state.activeProjectID = project.id
     project.closed = false
-    await this.save()
+    if (sources.length) project.importedFrom = [...new Set([...(project.importedFrom || []), ...sources])]
+    if (save) await this.save()
     return project
+  }
+  async importProjects(candidates) {
+    const result = { imported: 0, existing: 0, failed: [] }
+    for (const candidate of candidates) {
+      try {
+        const canonical = await fs.realpath(candidate.directory)
+        const alreadyOpen = this.state.projects.some(project => project.directory === canonical && !project.closed)
+        await this.addProject(canonical, { save: false, sources: candidate.sources || [] })
+        result[alreadyOpen ? 'existing' : 'imported']++
+      } catch { result.failed.push({ directory: candidate.directory, message: 'Folder is missing or inaccessible.' }) }
+    }
+    await this.save()
+    return result
   }
   project(id) {
     const project = this.state.projects.find(p => p.id === id)
@@ -314,9 +331,20 @@ class Store {
     return project
   }
   async publicState() {
+    const providers = []
+    for (const provider of this.state.providers) {
+      let connected = false, credentialStatus = 'unavailable'
+      try {
+        connected = Boolean(await this.getProviderKey(provider.id))
+        credentialStatus = this.providerKeys[provider.id] ? 'session' : this.savedProviderKeys[provider.id] ? 'saved' : 'missing'
+      } catch { /* keep free mode and other keys accessible */ }
+      providers.push({ ...provider, connected, credentialStatus })
+    }
     return {
       ...this.state,
       connected: Boolean(await this.getKey()),
+      credentialStatus: await fs.access(this.vault).then(() => 'saved', () => this.key ? 'session' : 'missing'),
+      providers,
       secureStorage: this.canEncrypt(),
       gateway: GATEWAY,
       freeProvider: FREE_PROVIDER,

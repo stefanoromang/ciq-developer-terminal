@@ -1,5 +1,32 @@
 # Validation — November 7, 2026
 
+## 0.3.0 local validation
+
+- 35 unit/engine/fixture tests pass on macOS arm64. Coverage includes six import
+  sources, multi-root JSONC workspaces, SQLite WAL snapshots, unavailable folders,
+  duplicate detection and preservation of existing notes/conversations/files.
+- Actual native safeStorage encrypt/decrypt persistence is checked through
+  Electron with a non-production fixture key. No fixture key is committed or
+  written to workspace JSON. Corrupt-vault preservation and session-only expiry
+  are unit tested.
+- Import discovery runs in a worker and is exercised through the native IPC/UI
+  path. Responsive import-dialog checks pass down to 390px; no renderer errors.
+- The local machine's discovery scan found four accessible folders with no
+  warnings. This establishes current OpenCode metadata compatibility here;
+  other source formats are covered by fixtures, not installed-app validation.
+- Update tests cover platform checksums, actual HTTP checksum redirects,
+  modified-download rejection, portable selection, and a real staged directory
+  replacement preserving the old installation.
+- Live free-model generation encountered HTTP 429 from OpenCode. Catalog
+  discovery succeeds; live quota and provider availability remain external.
+- Cross-platform 0.3.0 evidence is recorded by the tag's Actions run. The workflow
+  publishes only after all packaging jobs succeed. No Debian-host test or
+  universal end-user updater guarantee is claimed. Signing remains outstanding.
+
+The earlier 0.2.0 tag build passed on macOS ARM64, Windows X64 and Ubuntu X64:
+[run 42429517845](https://github.com/stefanoromang/ciq-developer-terminal/actions/runs/42429517845).
+The 0.3.0 source includes further import, vault and updater fixes.
+
 ## 0.1.2 Windows / Linux native build validation
 
 Build evidence: [GitHub Actions run 42423455785](https://github.com/stefanoromang/ciq-developer-terminal/actions/runs/42423455785),

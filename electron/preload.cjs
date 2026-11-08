@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 const commands = new Set([
   'state', 'project.open', 'project.select', 'project.close', 'memory.save',
+  'project.discover', 'project.import', 'project.importFolders',
   'free.enable', 'key.connect', 'key.disconnect', 'models.refresh', 'settings.save',
   'provider.list', 'provider.connect', 'provider.disconnect',
   'updates.check', 'updates.download', 'updates.install', 'updates.skip', 'updates.settings',

@@ -1,7 +1,7 @@
 {
   "name": "ciq-developer-terminal",
   "productName": "CIQ Developer Terminal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "An independent AI developer terminal created by Stefano Roman Gunness, designed for CollectivIQ and powered by OpenCode.",
   "author": "Stefano Roman Gunness",
@@ -29,7 +29,8 @@
     "install:user": "node scripts/install-user.mjs"
   },
   "dependencies": {
-    "@opencode/cli": "2.2.6"
+    "@opencode/cli": "2.2.6",
+    "jsonc-parser": "3.3.1"
   },
   "devDependencies": {
     "@phosphor-icons/react": "^2.1.10",

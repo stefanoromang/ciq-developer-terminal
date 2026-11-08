@@ -6,8 +6,9 @@ const {
   modelKey, findModel, normalizeEngineModels, mergeModels, FREE_PROVIDER,
 } = require('./core.cjs')
 const { Engine } = require('./engine.cjs')
+const { discoverInWorker } = require('./imports.cjs')
 const {
-  CHECK_INTERVAL, isUpdateCheckDue, checkForUpdate, downloadUpdate, installUpdate, macBundlePath,
+  CHECK_INTERVAL, isUpdateCheckDue, checkForUpdate, downloadUpdate, installUpdate, macBundlePath, verifyDownloaded,
 } = require('./updates.cjs')
 
 app.setName('CIQ Developer Terminal')
@@ -16,13 +17,20 @@ const userDirectory = process.env.CIQ_TEST_USER_DATA || path.join(app.getPath('a
 app.setPath('userData', userDirectory)
 let store, engine, window, quitting = false, refreshTimer, refreshInFlight
 let updateTimer, updateCheckInFlight, updateDownload
+let importCandidates = new Map(), importScan
 let updateRuntime = { downloading: false, progress: 0, ready: false, installing: false, error: '', downloaded: null }
 
 function broadcast(event) {
   // Provider/config/credential events may carry sensitive engine internals.
   // The renderer only needs projected session lifecycle notifications.
   if (!/^(ciq\.|session\.|permission\.|form\.|mcp\.|server\.connected)/.test(event.type)) return
-  if (window && !window.isDestroyed()) window.webContents.send('ciq:event', event)
+  if (window && !window.isDestroyed()) {
+    let serialized = JSON.stringify(event)
+    for (const key of [store?.key, ...Object.values(store?.providerKeys || {}), ...Object.values(store?.savedProviderKeys || {})]) {
+      if (key) serialized = serialized.replaceAll(JSON.stringify(key).slice(1, -1), '[redacted]')
+    }
+    window.webContents.send('ciq:event', JSON.parse(serialized))
+  }
 }
 function text(value, limit = 100_000) {
   if (typeof value !== 'string' || value.length > limit || value.includes('\0')) throw new Error('Invalid input.')
@@ -82,7 +90,10 @@ async function refreshModels() {
       try {
         const payload = await engine.request('GET', '/api/model')
         engineModels = normalizeEngineModels(payload, providerNames(), allowedProviders())
-      } catch (error) { engineError = error.message }
+      } catch (error) {
+        engineError = error.message
+        engineModels = store.state.models.filter(model => model.providerID !== 'collectiviq' && allowedProviders().includes(model.providerID))
+      }
     }
     const models = mergeModels(gatewayModels, engineModels)
     if (!models.length) {
@@ -117,7 +128,7 @@ async function checkForUpdates({ manual = false } = {}) {
       await store.save()
       await emitUpdateState()
       if (latest && latest.version !== store.state.updates.skippedVersion && store.state.updates.autoDownload !== false) {
-        void downloadUpdateFor(latest)
+        void downloadUpdateFor(latest).catch(() => {}) // error is projected by the download lifecycle
       }
       return updatePublic()
     } catch (error) {
@@ -135,7 +146,8 @@ async function downloadUpdateFor(latest) {
   if (updateRuntime.downloaded?.version === latest.version) return updateRuntime.downloaded
   if (updateDownload?.version === latest.version) return updateDownload.promise
   const extension = latest.install === 'zip' ? '.zip' : latest.install === 'tarball' ? '.tar.gz' : '.exe'
-  const file = path.join(app.getPath('temp'), `ciq-update-${latest.version}${extension}`)
+  const directory = await fs.mkdtemp(path.join(app.getPath('temp'), 'ciq-download-'))
+  const file = path.join(directory, `update${extension}`)
   let lastPercent = -1
   updateRuntime = { ...updateRuntime, downloading: true, progress: 0, ready: false, installing: false, error: '', downloaded: null }
   await emitUpdateState()
@@ -172,6 +184,8 @@ async function installPendingUpdate() {
   updateRuntime = { ...updateRuntime, installing: true, error: '' }
   await emitUpdateState()
   try {
+    if (!app.isPackaged) throw new Error('Install updates from a packaged copy of CIQ.')
+    await verifyDownloaded(downloaded.file, downloaded.sha256)
     await installUpdate({
       file: downloaded.file,
       update: latest,
@@ -194,6 +208,26 @@ async function action(command, p = {}) {
     const url = new URL(text(p.url, 8192))
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Only web links can be opened.')
     await shell.openExternal(url.href); return
+  }
+  if (command === 'project.discover') {
+    if (importScan) return importScan
+    importScan = discoverInWorker({ existing: store.state.projects, tempRoot: app.getPath('temp'), ...(process.env.CIQ_TEST_USER_DATA && process.env.CIQ_TEST_IMPORT_HOME ? { home: process.env.CIQ_TEST_IMPORT_HOME, env: {} } : {}) }).then(result => {
+      importCandidates = new Map(result.candidates.map(item => [item.id, item]))
+      return result
+    }).finally(() => { importScan = null })
+    return importScan
+  }
+  if (command === 'project.import') {
+    if (!Array.isArray(p.ids) || !p.ids.length || p.ids.length > 10_000 || p.ids.some(id => typeof id !== 'string' || !importCandidates.has(id))) throw new Error('Scan and select projects to import first.')
+    const selected = [...new Set(p.ids)].map(id => importCandidates.get(id))
+    const result = await store.importProjects(selected)
+    return { ...result, state: await store.publicState() }
+  }
+  if (command === 'project.importFolders') {
+    const choice = await dialog.showOpenDialog(window, { title: 'Import project folders', properties: ['openDirectory', 'multiSelections'], buttonLabel: 'Import folders' })
+    if (choice.canceled) return { canceled: true }
+    const result = await store.importProjects(choice.filePaths.map(directory => ({ directory, sources: ['Folders'] })))
+    return { ...result, state: await store.publicState() }
   }
   if (command === 'project.open') {
     const choice = await dialog.showOpenDialog(window, { title: 'Open a project', properties: ['openDirectory', 'createDirectory'], buttonLabel: 'Open project' })
@@ -258,9 +292,9 @@ async function action(command, p = {}) {
   }
   if (command === 'provider.list') {
     const payload = await engine.request('GET', '/api/integration')
-    const connected = new Set(store.state.providers.map(provider => provider.id))
+    const connected = new Set((await store.publicState()).providers.filter(provider => provider.connected).map(provider => provider.id))
     const data = (payload.data || [])
-      .filter(integration => integration?.methods?.some(method => method.type === 'env'))
+      .filter(integration => integration?.methods?.some(method => method.type === 'env' && method.names?.length))
       .map(integration => ({
         id: integration.id,
         name: integration.name || integration.id,
@@ -289,8 +323,8 @@ async function action(command, p = {}) {
   }
   if (command === 'provider.disconnect') {
     const providerID = text(p.providerID, 100)
-    store.state.providers = store.state.providers.filter(provider => provider.id !== providerID)
     await store.clearProviderKey(providerID)
+    store.state.providers = store.state.providers.filter(provider => provider.id !== providerID)
     store.state.models = store.state.models.filter(model => model.providerID !== providerID)
     const selected = findModel(store.state.models, store.state.selectedModel)
     store.state.selectedModel = selected ? modelKey(selected) : store.state.models[0] ? modelKey(store.state.models[0]) : ''

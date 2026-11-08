@@ -8,7 +8,7 @@ An independently designed, CollectivIQ-first desktop developer workspace with
 a left sidebar, project conversations, editable project memory, MCP controls,
 OpenCode's free coding models out of the box, and optional provider keys.
 
-**Version 0.2.0 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
+**Version 0.3.0 · Preview** · [Downloads](https://github.com/stefanoromang/ciq-developer-terminal/releases)
 · [Build and installation](#build) · [Original OpenCode source](https://github.com/anomalyco/opencode)
 
 ![CIQ Developer Terminal workspace with left-side navigation and CollectivIQ branding](docs/images/workspace.png)
@@ -40,15 +40,15 @@ Downloads are **unsigned**, and the macOS preview is **not notarized**.
 
 | Download | Format |
 |---|---|
-| [Windows x64 installer](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-windows-x64-setup.exe) | Per-user setup, no installer elevation |
-| [Windows x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-windows-x64-portable.exe) | Run without installing |
-| [Linux x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-linux-x64.tar.gz) | Extract and run as your user |
-| [macOS Apple Silicon](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.2.0/CIQ-Developer-Terminal-0.2.0-mac-arm64.zip) | Extract into `~/Applications` |
+| [Windows x64 installer](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.0/CIQ-Developer-Terminal-0.3.0-windows-x64-setup.exe) | Per-user setup, no installer elevation |
+| [Windows x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.0/CIQ-Developer-Terminal-0.3.0-windows-x64-portable.exe) | Run without installing |
+| [Linux x64 portable](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.0/CIQ-Developer-Terminal-0.3.0-linux-x64.tar.gz) | Extract and run as your user |
+| [macOS Apple Silicon](https://github.com/stefanoromang/ciq-developer-terminal/releases/download/v0.3.0/CIQ-Developer-Terminal-0.3.0-mac-arm64.zip) | Extract into `~/Applications` |
 
 See [download instructions](docs/DOWNLOADS.md) and
-[0.2.0 validation/release notes](docs/RELEASE-0.2.0.md).
+[0.3.0 release notes](docs/RELEASE-0.3.0.md).
 
-> **Updating from 0.1.2:** 0.1.2 has no updater. Install 0.2.0 once manually.
+> **Updating from 0.1.2:** 0.1.2 has no updater. Install 0.3.0 once manually.
 > From 0.2.0 onward, CIQ checks its GitHub releases about twice a week and can
 > download and install newer versions itself.
 
@@ -60,6 +60,11 @@ See [download instructions](docs/DOWNLOADS.md) and
   the bundled engine exposes by pasting a key; keys are kept in CIQ's encrypted
   vault and injected only into the isolated engine.
 - One left sidebar for projects, conversations, models, MCPs and memory.
+- **Import projects in bulk** from Claude Code, Codex, Cursor, OpenCode,
+  VS Code and Windsurf. Discover local folders, select all or search/filter,
+  and bring them into the sidebar. Choose folders from any other app too.
+- Keys are **saved securely by default** when OS encryption is available.
+  Provider cards distinguish saved keys from session-only connections.
 - Daily, weekly or manual model checks, without changing conversation models automatically.
 - Persistent local conversations and explicit, editable per-project notes.
 - Permission requests before agent tools execute.
@@ -150,11 +155,25 @@ The workflow in `.github/workflows/build.yml` builds native artifacts on separat
    SHA-256 verified. CIQ asks before restarting to install; it does not silently
    replace itself mid-session.
 
+### Import existing projects
+
+Click **Import projects** under Projects in the sidebar, then **Find projects**.
+CIQ reads local project metadata in a background worker, merges duplicate paths,
+and lets you import the selected directories together. **Choose folders…** also
+supports multiple folders from any editor. Existing CIQ notes and conversations
+are preserved when a project is reopened.
+
+Files stay in their original directories, including Git history and local
+instruction files. This is folder import, not conversion of proprietary chat
+histories or cloud-only Claude Projects. Remote-only workspaces must be available
+locally. App metadata formats can vary; manual folder selection is always available.
+See [supported import sources](docs/RELEASE-0.3.0.md#import-your-projects).
+
 ### Memory and privacy
 
 - Conversation history persists in the isolated local OpenCode database. The visible timeline loads the latest 80 messages and can page earlier messages; this is separate from model context compaction.
 - Project memory is **explicit user-edited notes**, not an unbounded or hidden automatic memory system. Notes can be disabled per project. Enabled notes are included in that project's new model prompts.
-- Saved gateway keys are encrypted through Electron `safeStorage`. macOS uses Keychain-backed protection; Windows uses DPAPI; Linux requires a secure available backend. `basic_text` is rejected. Session-only mode keeps the key in memory and requires reconnection after quitting.
+- Saved gateway and provider keys are encrypted through Electron `safeStorage`. macOS uses Keychain-backed protection; Windows uses DPAPI; Linux requires a secure available backend. `basic_text` is rejected. Session-only mode keeps the key in memory and requires reconnection after quitting.
 - This preview has no telemetry or cloud history sync. Prompt content, project context required by tools, and enabled notes are sent to the selected gateway model; connected remote MCP servers receive their tool inputs.
 - Filesystem, shell and MCP tool requests require explicit permission in the interface. A subprocess still runs with the current user's OS permissions: this is **not an OS filesystem sandbox**. The renderer is sandboxed.
 - The command panel executes commands you explicitly submit. It is a non-interactive shell output panel, not a PTY terminal emulator.

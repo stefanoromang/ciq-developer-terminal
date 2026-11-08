@@ -2,9 +2,9 @@ const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
-const { createWriteStream } = require('node:fs')
-const { Readable } = require('node:stream')
-const { once } = require('node:events')
+const { createReadStream, createWriteStream } = require('node:fs')
+const { Readable, Transform } = require('node:stream')
+const { pipeline } = require('node:stream/promises')
 const { execFile, spawn } = require('node:child_process')
 const { promisify } = require('node:util')
 
@@ -50,8 +50,9 @@ function isUpdateCheckDue(last, now = Date.now(), interval = CHECK_INTERVAL) {
   return now - last >= interval
 }
 
-function assetCandidates(version, platform, arch) {
+function assetCandidates(version, platform, arch, portable = false) {
   if (platform === 'win32') {
+    if (portable) return [{ name: `CIQ-Developer-Terminal-${version}-windows-${arch}-portable.exe`, install: 'portable' }]
     return [
       { name: `CIQ-Developer-Terminal-${version}-windows-${arch}-setup.exe`, install: 'nsis' },
       { name: `CIQ-Developer-Terminal-${version}-windows-${arch}-portable.exe`, install: 'portable' },
@@ -69,7 +70,7 @@ function assetCandidates(version, platform, arch) {
   return []
 }
 
-function selectRelease(releases, { currentVersion, platform = process.platform, arch = process.arch }) {
+function selectRelease(releases, { currentVersion, platform = process.platform, arch = process.arch, portable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE) }) {
   if (!Array.isArray(releases)) throw new Error('The update service returned an invalid response.')
   const candidates = releases
     .filter(release => release && !release.draft && typeof release.tag_name === 'string' && Array.isArray(release.assets))
@@ -77,7 +78,7 @@ function selectRelease(releases, { currentVersion, platform = process.platform, 
     .filter(entry => entry.order && compareVersions(entry.version, currentVersion) > 0)
     .sort((a, b) => compareVersions(b.version, a.version))
   for (const entry of candidates) {
-    for (const candidate of assetCandidates(entry.version, platform, arch)) {
+    for (const candidate of assetCandidates(entry.version, platform, arch, portable)) {
       const asset = entry.release.assets.find(item => item && item.name === candidate.name && item.state !== 'new')
       if (!asset || typeof asset.browser_download_url !== 'string') continue
       // A release can carry one checksum file per platform. Prefer the file for
@@ -103,7 +104,7 @@ function selectRelease(releases, { currentVersion, platform = process.platform, 
   return null
 }
 
-async function checkForUpdate({ fetchImpl = fetch, currentVersion, platform = process.platform, arch = process.arch, apiURL = RELEASES_API } = {}) {
+async function checkForUpdate({ fetchImpl = fetch, currentVersion, platform = process.platform, arch = process.arch, portable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE), apiURL = RELEASES_API } = {}) {
   const response = await fetchImpl(apiURL, {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': `${USER_AGENT}/${currentVersion || '0'}` },
     signal: AbortSignal.timeout(20_000), redirect: 'error',
@@ -112,7 +113,7 @@ async function checkForUpdate({ fetchImpl = fetch, currentVersion, platform = pr
     if ([403, 429].includes(response.status)) throw new Error('The update check was rate-limited by GitHub. CIQ will try again later.')
     throw new Error(`Could not check for updates (HTTP ${response.status}). CIQ will try again later.`)
   }
-  return selectRelease(await response.json(), { currentVersion, platform, arch })
+  return selectRelease(await response.json(), { currentVersion, platform, arch, portable })
 }
 
 function checksumFor(text, name) {
@@ -137,18 +138,12 @@ async function downloadUpdate(update, destination, { fetchImpl = fetch, onProgre
   let received = 0
   const output = createWriteStream(destination, { mode: 0o600 })
   try {
-    for await (const chunk of Readable.fromWeb(response.body)) {
-      hash.update(chunk)
-      received += chunk.length
-      if (!output.write(chunk)) await once(output, 'drain')
-      onProgress({ received, total })
-    }
-    await new Promise((resolve, reject) => {
-      output.once('error', reject)
-      output.end(resolve)
-    })
+    const meter = new Transform({ transform(chunk, _encoding, callback) {
+      hash.update(chunk); received += chunk.length
+      onProgress({ received, total }); callback(null, chunk)
+    } })
+    await pipeline(Readable.fromWeb(response.body), meter, output)
   } catch (error) {
-    output.destroy()
     await fs.unlink(destination).catch(() => {})
     throw error
   }
@@ -157,10 +152,11 @@ async function downloadUpdate(update, destination, { fetchImpl = fetch, onProgre
     throw new Error('The update download was incomplete. Try again.')
   }
   const sha256 = hash.digest('hex')
-  const sums = await fetchImpl(update.checksums.url, {
+  let sums
+  try { sums = await fetchImpl(update.checksums.url, {
     headers: { 'User-Agent': USER_AGENT },
-    signal: AbortSignal.timeout(20_000), redirect: 'error',
-  })
+    signal: AbortSignal.timeout(20_000), redirect: 'follow',
+  }) } catch (error) { await fs.unlink(destination).catch(() => {}); throw error }
   if (!sums.ok) {
     await fs.unlink(destination).catch(() => {})
     throw new Error('The checksum file could not be downloaded. The update was not installed.')
@@ -177,6 +173,12 @@ async function downloadUpdate(update, destination, { fetchImpl = fetch, onProgre
   return { file: destination, sha256, size: received }
 }
 
+async function verifyDownloaded(file, expected) {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(file)) hash.update(chunk)
+  if (!expected || hash.digest('hex') !== expected) throw new Error('The update file changed after download. Download it again before installing.')
+}
+
 function macBundlePath(execPath = process.execPath) {
   const match = /[\\/]Contents[\\/]MacOS[\\/]/.exec(execPath)
   if (!match) throw new Error('This copy of CIQ is not inside a macOS application bundle.')
@@ -191,7 +193,7 @@ async function installUpdate({
   if (platform === 'win32') {
     if (update.install === 'nsis') {
       const directory = targetPath || path.dirname(execPath)
-      spawnImpl(file, ['/S', `/D=${directory}`], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+      spawnImpl(file, ['/S', '/currentuser', `/D=${directory}`], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
       return { mode: 'installer' }
     }
     const target = portable || execPath
@@ -205,7 +207,9 @@ async function installUpdate({
       '  timeout /t 1 /nobreak >NUL',
       '  goto wait',
       ')',
-      'copy /Y "%SOURCE%" "%TARGET%" >NUL',
+      'copy /Y "%SOURCE%" "%TARGET%.new" >NUL || exit /b 1',
+      'move /Y "%TARGET%" "%TARGET%.previous" >NUL || exit /b 1',
+      'move /Y "%TARGET%.new" "%TARGET%" >NUL || (move /Y "%TARGET%.previous" "%TARGET%" >NUL & exit /b 1)',
       'start "" "%TARGET%"',
       '',
     ].join('\r\n'))
@@ -222,42 +226,55 @@ async function installUpdate({
     const apps = (await fs.readdir(work)).filter(name => name.endsWith('.app'))
     if (apps.length !== 1) throw new Error('The update archive did not contain exactly one application.')
     const source = path.join(work, apps[0])
+    await fs.access(path.join(source, 'Contents', 'Info.plist'))
+    await fs.access(path.dirname(target), require('node:fs').constants.W_OK)
+    const stage = await fs.mkdtemp(path.join(path.dirname(target), '.ciq-update-'))
+    const staged = path.join(stage, path.basename(target))
+    await execFileAsync('/usr/bin/ditto', [source, staged])
     const script = path.join(work, 'install.sh')
     await fs.writeFile(script, [
       '#!/bin/sh',
       `while kill -0 ${pid} 2>/dev/null; do sleep 0.5; done`,
-      'rm -rf "$TARGET"',
-      '/usr/bin/ditto "$SOURCE" "$TARGET"',
+      'set -eu',
+      'mv "$TARGET" "$BACKUP"',
+      'if ! mv "$SOURCE" "$TARGET"; then mv "$BACKUP" "$TARGET"; exit 1; fi',
       '/usr/bin/open "$TARGET"',
       '',
     ].join('\n'), { mode: 0o700 })
     spawnImpl('/bin/sh', [script], {
       detached: true, stdio: 'ignore',
-      env: { ...process.env, TARGET: target, SOURCE: source },
+      env: { ...process.env, TARGET: target, SOURCE: staged, BACKUP: path.join(stage, 'previous.app') },
     }).unref()
     return { mode: 'bundle-replace', target }
   }
   if (platform === 'linux') {
     const target = targetPath || path.dirname(execPath)
     const work = await fs.mkdtemp(path.join(tempRoot, 'ciq-update-'))
-    await execFileAsync('/bin/tar', ['-xzf', file, '-C', work])
+    await execFileAsync('/usr/bin/tar', ['-xzf', file, '-C', work])
     const entries = await fs.readdir(work)
     const source = entries.length === 1 && (await fs.stat(path.join(work, entries[0]))).isDirectory()
       ? path.join(work, entries[0])
       : work
     const launch = path.join(target, path.basename(execPath))
+    await fs.access(path.join(source, path.basename(execPath)))
+    await fs.access(path.dirname(target), require('node:fs').constants.W_OK)
+    const stage = await fs.mkdtemp(path.join(path.dirname(target), '.ciq-update-'))
+    const staged = path.join(stage, 'application')
+    await fs.cp(source, staged, { recursive: true, verbatimSymlinks: true })
     const script = path.join(work, 'install.sh')
     await fs.writeFile(script, [
       '#!/bin/sh',
       `while kill -0 ${pid} 2>/dev/null; do sleep 0.5; done`,
-      'cp -a "$SOURCE/." "$TARGET/"',
+      'set -eu',
+      'mv "$TARGET" "$BACKUP"',
+      'if ! mv "$SOURCE" "$TARGET"; then mv "$BACKUP" "$TARGET"; exit 1; fi',
       'chmod +x "$LAUNCH"',
       '"$LAUNCH" >/dev/null 2>&1 &',
       '',
     ].join('\n'), { mode: 0o700 })
     spawnImpl('/bin/sh', [script], {
       detached: true, stdio: 'ignore',
-      env: { ...process.env, TARGET: target, SOURCE: source, LAUNCH: launch },
+      env: { ...process.env, TARGET: target, SOURCE: staged, BACKUP: path.join(stage, 'previous'), LAUNCH: launch },
     }).unref()
     return { mode: 'directory-replace', target }
   }
@@ -267,5 +284,5 @@ async function installUpdate({
 module.exports = {
   REPOSITORY, CHECK_INTERVAL, parseVersion, compareVersions, isUpdateCheckDue,
   assetCandidates, selectRelease, checkForUpdate, checksumFor, downloadUpdate,
-  installUpdate, macBundlePath,
+  installUpdate, macBundlePath, verifyDownloaded,
 }

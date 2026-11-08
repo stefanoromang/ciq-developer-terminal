@@ -50,6 +50,15 @@ app.whenReady().then(async () => {
   assert.equal(modal.password, true)
   await fs.writeFile(path.join(__dirname, '..', 'test-results', 'onboarding.png'), (await window.webContents.capturePage()).toPNG())
   assert.deepEqual(errors, [])
+  await window.webContents.executeJavaScript(`document.querySelector('button[aria-label="Close dialog"]').click()`)
+  await window.webContents.executeJavaScript(`document.querySelector('.import-projects-button').click()`)
+  await waitFor(`document.querySelector('dialog h2')?.textContent === 'Import your projects'`)
+  for (const [width, height] of [[1440, 960], [768, 1024], [390, 844]]) {
+    window.setContentSize(width, height)
+    await window.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+    assert.equal(await window.webContents.executeJavaScript('document.documentElement.scrollWidth <= innerWidth'), true)
+    assert.equal(await window.webContents.executeJavaScript('document.querySelector("dialog").scrollWidth <= document.querySelector("dialog").clientWidth'), true)
+  }
   console.log(JSON.stringify({ success: true, screenshots, modal, consoleErrors: errors }, null, 2))
   app.quit()
 }).catch(error => { console.error(error); process.exitCode = 1; app.exit(1) })

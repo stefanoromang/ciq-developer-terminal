@@ -2,7 +2,7 @@ export type Model = { id: string; providerID: string; name: string; provider: st
 export type Session = { id: string; title: string; model: string; created: number; archived?: boolean }
 export type Project = { id: string; name: string; directory: string; memory: string; memoryEnabled: boolean; sessions: Session[]; activeSessionID?: string; closed?: boolean }
 export type Mcp = { name: string; config: { type: 'local' | 'remote'; url?: string; command?: string[]; disabled?: boolean } }
-export type ProviderConnection = { id: string; name: string; env: string[] }
+export type ProviderConnection = { id: string; name: string; env: string[]; connected: boolean; credentialStatus: 'saved' | 'session' | 'missing' | 'unavailable' }
 export type ProviderOption = { id: string; name: string; env: string[]; connected: boolean }
 export type UpdateInfo = {
   currentVersion: string; lastCheck: number; intervalDays: number; skippedVersion: string; autoDownload: boolean
@@ -13,7 +13,7 @@ export type UpdateInfo = {
 export type Workspace = {
   projects: Project[]; activeProjectID?: string; connected: boolean; secureStorage: boolean; models: Model[]; selectedModel: string
   cadence: 'daily' | 'weekly' | 'manual'; lastRefresh: number; toolsConfirmed: boolean; mcps: Mcp[]; newModels?: string[]
-  gateway: string; freeProvider: string; freeEnabled: boolean; modelsAvailable: boolean; providers: ProviderConnection[]; updates: UpdateInfo
+  gateway: string; freeProvider: string; freeEnabled: boolean; modelsAvailable: boolean; providers: ProviderConnection[]; updates: UpdateInfo; credentialStatus?: string
 }
 export type Content = { type: string; text?: string; name?: string; id?: string; state?: { status: string; input?: unknown; content?: { type: string; text?: string }[]; error?: string } }
 export type Message = { id: string; type: string; text?: string; metadata?: { ciqDisplayText?: string }; content?: Content[]; model?: { id: string }; error?: { message?: string }; time?: { created: number } }

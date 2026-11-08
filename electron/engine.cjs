@@ -107,10 +107,11 @@ class Engine {
     try { data = await response.json() } catch { throw new Error(`The engine returned an invalid response (HTTP ${response.status}).`) }
     if (!response.ok) {
       let message = data.message || data.error?.message || `Engine request failed (HTTP ${response.status}).`
-      const key = this.store.key
-      if (key) message = String(message).replaceAll(key, '[redacted]')
+      for (const key of [this.store.key, ...Object.values(this.store.providerKeys), ...Object.values(this.store.savedProviderKeys)]) {
+        if (key) message = String(message).replaceAll(key, '[redacted]')
+      }
       if (/free usage limit|FreeUsageLimitError/i.test(String(message))) {
-        message = 'OpenCode’s free-model limit was reached. Wait a few minutes, choose another free model, or connect a CollectivIQ Developer key for reliable access.'
+        message = 'OpenCode’s free-model limit was reached. Try again later or connect another provider in Model library.'
       }
       throw new Error(String(message).slice(0, 700))
     }

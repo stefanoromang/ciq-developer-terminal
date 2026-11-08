@@ -27,10 +27,15 @@ pinned by CIQ Developer Terminal.
 ## What Stefano's application adds
 
 - A separately implemented desktop interface with a left-side workspace.
-- CollectivIQ gateway onboarding and an API-derived model catalog.
+- Free OpenCode models on launch, optional CollectivIQ/provider keys, and an
+  API-derived model catalog with a free-only filter.
+- Encrypted key persistence and saved/session-only connection status.
 - Project/conversation organization and explicit local project notes.
+- Bulk import of local project folders from Claude Code, Codex, Cursor,
+  OpenCode, VS Code, Windsurf and manual multi-folder selection.
 - MCP setup controls, tool approval UI and a command-output panel.
 - User-level installation and platform packaging configuration.
+- Scheduled GitHub update discovery, verified downloads and restart/install UI.
 
 ## What remains OpenCode's work
 
