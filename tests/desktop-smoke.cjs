@@ -42,6 +42,7 @@ app.whenReady().then(async () => {
   }
   await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Connect key').click()`)
   await waitFor('Boolean(document.querySelector("dialog[open]"))')
+  await fs.writeFile(path.join(__dirname, '..', 'test-results', 'onboarding-free.png'), (await window.webContents.capturePage()).toPNG())
   await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('dialog button')).find(b => b.textContent.includes('CollectivIQ Developer key'))?.click()`)
   await waitFor('Boolean(document.querySelector("dialog input[type=\\"password\\"]"))')
   const modal = await window.webContents.executeJavaScript(`({label: document.querySelector('dialog').getAttribute('aria-labelledby'), focusedInside: document.querySelector('dialog').contains(document.activeElement), title: document.querySelector('dialog h2').textContent, password: Boolean(document.querySelector('dialog input[type="password"]'))})`)
